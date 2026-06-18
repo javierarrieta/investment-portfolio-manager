@@ -1,5 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
 from .database import engine, Base
 from .routes import portfolios, transactions, analytics
 
@@ -11,6 +12,22 @@ app = FastAPI(
     description="REST API for managing portfolios, assets, FIFO/LIFO tax calculations, and advanced stats.",
     version="1.0.0"
 )
+
+@app.on_event("startup")
+def run_migrations():
+    with engine.connect() as conn:
+        # Migrate Portfolios
+        try:
+            conn.execute(text("ALTER TABLE portfolios ADD COLUMN base_currency VARCHAR DEFAULT 'USD'"))
+            conn.commit()
+        except Exception: # Column exists
+            pass
+        # Migrate Assets
+        try:
+            conn.execute(text("ALTER TABLE assets ADD COLUMN currency VARCHAR DEFAULT 'USD'"))
+            conn.commit()
+        except Exception: # Column exists
+            pass
 
 # Enable CORS for frontend integration
 app.add_middleware(

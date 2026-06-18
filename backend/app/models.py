@@ -9,6 +9,7 @@ class Portfolio(Base):
     name = Column(String, nullable=False)
     description = Column(String, nullable=True)
     currency = Column(String, default="USD")
+    base_currency = Column(String, default="USD")
 
     assets = relationship("Asset", back_populates="portfolio", cascade="all, delete-orphan")
 
@@ -22,6 +23,7 @@ class Asset(Base):
     name = Column(String, nullable=False)
     asset_type = Column(String, nullable=False)  # STOCK, CRYPTO, ETF, MUTUAL_FUND
     sector = Column(String, nullable=True)
+    currency = Column(String, default="USD")
 
     portfolio = relationship("Portfolio", back_populates="assets")
     transactions = relationship("Transaction", back_populates="asset", cascade="all, delete-orphan")
