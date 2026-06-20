@@ -5,6 +5,7 @@ from typing import List, Dict, Any, Tuple
 from sqlalchemy.orm import Session
 from .models import HistoricalPrice, Transaction, Asset
 import yfinance as yf
+from .services.currency_service import CurrencyService
 
 class StatsEngine:
     @staticmethod
@@ -99,10 +100,12 @@ class StatsEngine:
         return df_pivot
 
     @staticmethod
-    def calculate_portfolio_performance(
+    async def calculate_portfolio_performance(
         db: Session,
         assets: List[Asset],
-        transactions: List[Transaction]
+        transactions: List[Transaction],
+        base_currency: str,
+        currency_service: CurrencyService
     ) -> Dict[str, Any]:
         """
         Computes historical daily value of the portfolio and cumulative Time-Weighted Return (TWR).
@@ -129,6 +132,7 @@ class StatsEngine:
         end_date = date.today()
 
         symbols = [a.symbol for a in assets]
+        asset_id_to_asset = {a.id: a for a in assets}
         
         # Sync and retrieve prices
         StatsEngine.sync_historical_prices(db, symbols, start_date)
@@ -146,24 +150,6 @@ class StatsEngine:
         sorted_txs = sorted(transactions, key=lambda x: x.date)
 
         for symbol in symbols:
-            current_qty = 0.0
-            tx_ptr = 0
-            for i, d in enumerate(dates):
-                # Apply all transactions that happened on or before this day
-                while tx_ptr < len(sorted_txs) and sorted_txs[tx_ptr].date.date() <= d:
-                    tx = sorted_txs[tx_ptr]
-                    tx_sym = asset_id_to_symbol.get(tx.asset_id)
-                    if tx_sym == symbol:
-                        if tx.type.upper() == "BUY":
-                            current_qty += tx.quantity
-                        elif tx.type.upper() == "SELL":
-                            current_qty = max(0.0, current_qty - tx.quantity)
-                    tx_ptr += 1
-                qty_dict[symbol][i] = current_qty
-                # Reset pointer to re-evaluate transactions for this symbol
-                # Actually, sorting and walking transactions for each symbol is easier:
-            
-            # Let's rebuild quantities per symbol for safety
             current_qty = 0.0
             symbol_txs = [t for t in sorted_txs if asset_id_to_symbol.get(t.asset_id) == symbol]
             tx_idx = 0
@@ -186,19 +172,35 @@ class StatsEngine:
             tx_date = tx.date.date()
             if tx_date in dates:
                 idx = dates.index(tx_date)
+                asset = asset_id_to_asset.get(tx.asset_id)
+                if not asset:
+                    continue
+                
                 cost = tx.quantity * tx.price
+                fee = tx.fee
+                
+                if asset.currency != base_currency:
+                    rate = await currency_service.get_rate(asset.currency, base_currency, tx.date)
+                    cost *= rate
+                    fee *= rate
+                
                 if tx.type.upper() == "BUY":
                     # Cash inflow to the assets
-                    daily_cash_flow[idx] += (cost + tx.fee)
+                    daily_cash_flow[idx] += (cost + fee)
                 elif tx.type.upper() == "SELL":
                     # Cash outflow from the assets
-                    daily_cash_flow[idx] -= (cost - tx.fee)
+                    daily_cash_flow[idx] -= (cost - fee)
 
         for i, d in enumerate(dates):
             val = 0.0
-            for symbol in symbols:
+            for asset in assets:
+                symbol = asset.symbol
                 price = price_df.loc[d, symbol] if symbol in price_df.columns else 0.0
                 qty = qty_dict[symbol][i]
+                
+                if asset.currency != base_currency:
+                    rate = await currency_service.get_rate(asset.currency, base_currency, d)
+                    price *= rate
                 val += qty * price
             portfolio_values[i] = val
 
