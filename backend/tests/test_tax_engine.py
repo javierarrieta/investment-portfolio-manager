@@ -4,14 +4,26 @@ from app.tax_engine import TaxLotEngine
 
 # Mock transaction database class for testing
 class MockTransaction:
-    def __init__(self, type: str, quantity: float, price: float, fee: float, date: datetime):
+    def __init__(self, type: str, quantity: float, price: float, fee: float, date: datetime, currency: str = "USD"):
         self.type = type
         self.quantity = quantity
         self.price = price
         self.fee = fee
         self.date = date
+        self.currency = currency
 
-def test_fifo_matching():
+class MockCurrencyService:
+    def __init__(self, rates: dict = None):
+        self.rates = rates or {}
+
+    async def get_rate(self, from_curr: str, to_curr: str, date: datetime) -> float:
+        if from_curr == to_curr:
+            return 1.0
+        key = (from_curr, to_curr)
+        return self.rates.get(key, 1.0)
+
+@pytest.mark.asyncio
+async def test_fifo_matching():
     # Buy 10 AAPL at 100 on Jan 1st (fee = 10)
     # Buy 5 AAPL at 120 on Jan 5th (fee = 5)
     # Sell 12 AAPL at 150 on Jan 10th (fee = 12)
@@ -21,21 +33,16 @@ def test_fifo_matching():
         MockTransaction("SELL", 12.0, 150.0, 12.0, datetime(2026, 1, 10))
     ]
     
-    # FIFO Calculation:
-    # First lot: 10 units. Cost basis including fee = (10 * 100 + 10) / 10 = 101.
-    # Second lot: 5 units. Cost basis including fee = (5 * 120 + 5) / 5 = 121.
-    # Sell: 12 units at 150. Net proceeds per unit = (12 * 150 - 12) / 12 = 149.
-    # FIFO matches:
-    # - 10 units from Lot 1 (cost = 101, proceeds = 149, gain = 10 * 48 = 480)
-    # - 2 units from Lot 2 (cost = 121, proceeds = 149, gain = 2 * 28 = 56)
-    # Total Realized P&L = 480 + 56 = 536.
-    # Remaining: 3 units of Lot 2 (cost basis = 121, market price = 160).
+    currency_service = MockCurrencyService()
     
-    summary = TaxLotEngine.calculate_lots(
+    summary = await TaxLotEngine.calculate_lots(
         symbol="AAPL",
         asset_type="STOCK",
         transactions=txs,
         current_price=160.0,
+        asset_currency="USD",
+        base_currency="USD",
+        currency_service=currency_service,
         strategy="FIFO"
     )
     
@@ -46,27 +53,24 @@ def test_fifo_matching():
     assert summary["unrealized_pnl"] == pytest.approx(3 * (160 - 121))
 
 
-def test_lifo_matching():
-    # Buy 10 AAPL at 100 on Jan 1st (fee = 10)
-    # Buy 5 AAPL at 120 on Jan 5th (fee = 5)
-    # Sell 12 AAPL at 150 on Jan 10th (fee = 12)
+@pytest.mark.asyncio
+async def test_lifo_matching():
     txs = [
         MockTransaction("BUY", 10.0, 100.0, 10.0, datetime(2026, 1, 1)),
         MockTransaction("BUY", 5.0, 120.0, 5.0, datetime(2026, 1, 5)),
         MockTransaction("SELL", 12.0, 150.0, 12.0, datetime(2026, 1, 10))
     ]
     
-    # LIFO Calculation:
-    # First lot (Jan 5th): 5 units. Cost = 121. Proceeds = 149. Gain = 5 * 28 = 140.
-    # Second lot (Jan 1st): 7 units. Cost = 101. Proceeds = 149. Gain = 7 * 48 = 336.
-    # Total Realized P&L = 140 + 336 = 476.
-    # Remaining: 3 units of Lot 1 (cost basis = 101).
-    
-    summary = TaxLotEngine.calculate_lots(
+    currency_service = MockCurrencyService()
+
+    summary = await TaxLotEngine.calculate_lots(
         symbol="AAPL",
         asset_type="STOCK",
         transactions=txs,
         current_price=160.0,
+        asset_currency="USD",
+        base_currency="USD",
+        currency_service=currency_service,
         strategy="LIFO"
     )
     
@@ -76,31 +80,24 @@ def test_lifo_matching():
     assert summary["unrealized_pnl"] == pytest.approx(3 * (160 - 101))
 
 
-def test_hybrid_matching():
-    # Buy 10 AAPL at 100 on Jan 1st (fee = 0)  - Long term if sold on Feb 15th (>30 days)
-    # Buy 5 AAPL at 120 on Feb 10th (fee = 0)  - Short term if sold on Feb 15th (5 days)
-    # Sell 7 AAPL at 150 on Feb 15th (fee = 0)
+@pytest.mark.asyncio
+async def test_hybrid_matching():
     txs = [
         MockTransaction("BUY", 10.0, 100.0, 0.0, datetime(2026, 1, 1)),
         MockTransaction("BUY", 5.0, 120.0, 0.0, datetime(2026, 2, 10)),
         MockTransaction("SELL", 7.0, 150.0, 0.0, datetime(2026, 2, 15))
     ]
     
-    # Hybrid strategy (30 days threshold):
-    # Feb 15th sell.
-    # - Lot 2 (Feb 10th) is short term (5 days age <= 30). Matches first (LIFO).
-    # - Lot 1 (Jan 1st) is long term (45 days age > 30). Matches next (FIFO).
-    # We sell 7 units:
-    # - 5 units from Lot 2 (cost = 120, proceeds = 150, gain = 5 * 30 = 150)
-    # - 2 units from Lot 1 (cost = 100, proceeds = 150, gain = 2 * 50 = 100)
-    # Total Realized P&L = 150 + 100 = 250.
-    # Remaining: 8 units of Lot 1 (cost = 100).
-    
-    summary = TaxLotEngine.calculate_lots(
+    currency_service = MockCurrencyService()
+
+    summary = await TaxLotEngine.calculate_lots(
         symbol="AAPL",
         asset_type="STOCK",
         transactions=txs,
         current_price=160.0,
+        asset_currency="USD",
+        base_currency="USD",
+        currency_service=currency_service,
         strategy="HYBRID",
         hybrid_threshold_days=30
     )
@@ -108,3 +105,41 @@ def test_hybrid_matching():
     assert summary["realized_pnl"] == pytest.approx(250.0)
     assert summary["current_shares"] == pytest.approx(8.0)
     assert summary["total_cost"] == pytest.approx(8 * 100.0)
+
+@pytest.mark.asyncio
+async def test_multi_currency_fifo():
+    # Buy 10 AAPL (USD) at 100, Sell 5 AAPL (USD) at 150. Portfolio is EUR.
+    # Mock CurrencyService to return EURUSD = 0.9
+    # Expected realized P&L in EUR = (5 * 150 * 0.9) - (5 * 100 * 0.9) = 225 EUR
+    txs = [
+        MockTransaction("BUY", 10.0, 100.0, 0.0, datetime(2026, 1, 1), currency="USD"),
+        MockTransaction("SELL", 5.0, 150.0, 0.0, datetime(2026, 1, 10), currency="USD")
+    ]
+    
+    # Rate: 1 USD = 0.9 EUR
+    currency_service = MockCurrencyService(rates={("USD", "EUR"): 0.9})
+    
+    summary = await TaxLotEngine.calculate_lots(
+        symbol="AAPL",
+        asset_type="STOCK",
+        transactions=txs,
+        current_price=160.0, # USD
+        asset_currency="USD",
+        base_currency="EUR",
+        currency_service=currency_service,
+        strategy="FIFO"
+    )
+    
+    # Realized P&L:
+    # Buy: 10 * 100 = 1000 USD = 900 EUR
+    # Sell: 5 * 150 = 750 USD = 675 EUR
+    # Cost of 5 units: 5 * 100 = 500 USD = 450 EUR
+    # Realized P&L = 675 - 450 = 225 EUR
+    assert summary["realized_pnl"] == pytest.approx(225.0)
+    # Current price in EUR: 160 * 0.9 = 144 EUR
+    # Current shares: 5
+    # Market value: 5 * 144 = 720 EUR
+    # Total cost (remaining 5 units): 5 * 100 * 0.9 = 450 EUR
+    # Unrealized P&L: 720 - 450 = 270 EUR
+    assert summary["market_value"] == pytest.approx(720.0)
+    assert summary["unrealized_pnl"] == pytest.approx(270.0)

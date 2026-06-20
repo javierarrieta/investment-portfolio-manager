@@ -4,11 +4,14 @@ from .schemas import TaxLot, AssetTaxSummary
 
 class TaxLotEngine:
     @staticmethod
-    def calculate_lots(
+    async def calculate_lots(
         symbol: str,
         asset_type: str,
         transactions: List[Any],  # List of Transaction database models
         current_price: float,
+        asset_currency: str,      # New
+        base_currency: str,       # New
+        currency_service: Any,    # New
         strategy: str = "FIFO",  # FIFO, LIFO, HYBRID
         hybrid_threshold_days: int = 30
     ) -> Dict[str, Any]:
@@ -21,30 +24,47 @@ class TaxLotEngine:
         # Sort transactions chronologically
         sorted_txs = sorted(transactions, key=lambda x: x.date)
 
+        # Convert current_price to base_currency if necessary
+        if asset_currency != base_currency:
+            # Use the latest transaction date or now for current price conversion
+            latest_date = sorted_txs[-1].date if sorted_txs else datetime.now()
+            rate = await currency_service.get_rate(asset_currency, base_currency, latest_date)
+            current_price_base = current_price * rate
+        else:
+            current_price_base = current_price
+
         # Active buy lots list. Each lot is represented as a dict:
         # {
         #   "date": datetime,
-        #   "price": float, (raw unit price)
+        #   "price": float, (raw unit price in base currency)
         #   "qty": float, (remaining qty)
-        #   "fee_per_unit": float,
-        #   "unit_cost": float  # (qty * price + fee) / qty
+        #   "fee_per_unit": float, (in base currency)
+        #   "unit_cost": float  # (qty * price + fee) / qty (in base currency)
         # }
         buy_lots = []
         realized_pnl = 0.0
 
         for tx in sorted_txs:
+            # Get conversion rate for this transaction
+            if asset_currency != base_currency:
+                tx_rate = await currency_service.get_rate(asset_currency, base_currency, tx.date)
+            else:
+                tx_rate = 1.0
+
             if tx.type.upper() == "BUY":
-                unit_cost = (tx.quantity * tx.price + tx.fee) / tx.quantity if tx.quantity > 0 else tx.price
+                unit_cost_asset = (tx.quantity * tx.price + tx.fee) / tx.quantity if tx.quantity > 0 else tx.price
+                unit_cost_base = unit_cost_asset * tx_rate
                 buy_lots.append({
                     "date": tx.date,
-                    "price": tx.price,
+                    "price": tx.price * tx_rate,
                     "qty": tx.quantity,
-                    "fee_per_unit": tx.fee / tx.quantity if tx.quantity > 0 else 0.0,
-                    "unit_cost": unit_cost
+                    "fee_per_unit": (tx.fee / tx.quantity if tx.quantity > 0 else 0.0) * tx_rate,
+                    "unit_cost": unit_cost_base
                 })
             elif tx.type.upper() == "SELL":
                 qty_to_sell = tx.quantity
-                sell_unit_proceeds = (tx.quantity * tx.price - tx.fee) / tx.quantity if tx.quantity > 0 else tx.price
+                sell_unit_proceeds_asset = (tx.quantity * tx.price - tx.fee) / tx.quantity if tx.quantity > 0 else tx.price
+                sell_unit_proceeds_base = sell_unit_proceeds_asset * tx_rate
 
                 # Filter lots that were bought BEFORE or AT the sell date and have remaining quantity
                 eligible_lots = [lot for lot in buy_lots if lot["date"] <= tx.date and lot["qty"] > 0]
@@ -89,7 +109,7 @@ class TaxLotEngine:
 
                     matched_qty = min(qty_to_sell, lot["qty"])
                     cost_basis = matched_qty * lot["unit_cost"]
-                    proceeds = matched_qty * sell_unit_proceeds
+                    proceeds = matched_qty * sell_unit_proceeds_base
                     
                     realized_pnl += (proceeds - cost_basis)
 
@@ -108,20 +128,20 @@ class TaxLotEngine:
                 total_cost_basis += lot_cost
                 
                 # Latent metrics for this lot
-                lot_market_value = lot["qty"] * current_price
+                lot_market_value = lot["qty"] * current_price_base
                 latent_gain_loss = lot_market_value - lot_cost
                 latent_roi = (latent_gain_loss / lot_cost) if lot_cost > 0 else 0.0
 
                 open_lots.append(TaxLot(
                     buy_date=lot["date"],
                     buy_price=lot["price"],
-                    original_qty=lot["qty"] + (lot.get("original_qty_dummy", 0.0)),  # We'll just display remaining and original
+                    original_qty=lot["qty"],
                     remaining_qty=lot["qty"],
                     latent_gain_loss=latent_gain_loss,
                     latent_roi=latent_roi
                 ))
 
-        market_value = total_remaining_qty * current_price
+        market_value = total_remaining_qty * current_price_base
         unrealized_pnl = market_value - total_cost_basis
         unrealized_roi = (unrealized_pnl / total_cost_basis) if total_cost_basis > 0 else 0.0
         average_cost = (total_cost_basis / total_remaining_qty) if total_remaining_qty > 0 else 0.0
@@ -131,7 +151,7 @@ class TaxLotEngine:
             "asset_type": asset_type,
             "current_shares": total_remaining_qty,
             "average_cost": average_cost,
-            "current_price": current_price,
+            "current_price": current_price_base,
             "total_cost": total_cost_basis,
             "market_value": market_value,
             "unrealized_pnl": unrealized_pnl,
