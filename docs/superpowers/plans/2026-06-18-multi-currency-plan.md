@@ -1,202 +1,93 @@
-# Multi-Currency Support Implementation Plan
-
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
-
-**Goal:** Enable multi-currency support by adding currency fields to assets/portfolios and a central `CurrencyService` for conversions.
-
-**Architecture:** A new `CurrencyService` handles exchange rate fetching and caching. Core engines (`TaxLotEngine`, `StatsEngine`) are updated to use this service to perform all calculations in a portfolio's specified `base_currency`.
-
-**Tech Stack:** Python (FastAPI, SQLAlchemy), React (Vite), Yahoo Finance API.
-
----
-
-### Task 1: Backend Models & Migration
-
-**Files:**
-- Modify: `backend/app/models.py`
-- Modify: `backend/app/main.py`
-
-- [ ] **Step 1: Add `base_currency` to `Portfolio` and `currency` to `Asset` in `models.py`**
-
-```python
-# backend/app/models.py (conceptual)
-class Portfolio(Base):
-    # ... existing fields
-    base_currency = Column(String, default="USD")
-
-class Asset(Base):
-    # ... existing fields
-    currency = Column(String, default="USD")
-```
-
-- [ ] **Step 2: Implement automatic migration in `main.py`**
-
-```python
-# backend/app/main.py (conceptual)
-from sqlalchemy import text
-
-@app.on_event("startup")
-def run_migrations():
-    with engine.connect() as conn:
-        # Migrate Portfolios
-        try:
-            conn.execute(text("ALTER TABLE portfolios ADD COLUMN base_currency VARCHAR DEFAULT 'USD'"))
-            conn.commit()
-        except Exception: # Column exists
-            pass
-        # Migrate Assets
-        try:
-            conn.execute(text("ALTER TABLE assets ADD COLUMN currency VARCHAR DEFAULT 'USD'"))
-            conn.commit()
-        except Exception: # Column exists
-            pass
-```
-
-- [ ] **Step 3: Run and verify migration**
-  Run the backend and check `backend/portfolio.db` to ensure columns exist.
-
-- [ ] **Step 4: Commit**
-
-```bash
-git add backend/app/models.py backend/app/main.py
-git commit -m "feat: add currency fields and migration logic"
-```
-
-### Task 2: Currency Service
-
-**Files:**
-- Create: `backend/app/services/currency_service.py`
-- Test: `backend/tests/test_currency_service.py`
-
-- [ ] **Step 1: Write the failing test for `CurrencyService`**
-
-```python
-# backend/tests/test_currency_service.py
-import pytest
-from app.services.currency_service import CurrencyService
-
-@pytest.mark.asyncio
-async def test_get_rate_success():
-    service = CurrencyService()
-    # Mocking the Yahoo Finance fetch in the implementation
-    rate = await service.get_rate("EUR", "USD", datetime(2026, 1, 1))
-    assert rate > 0
-```
-
-- [ ] **Step 2: Run test to verify it fails**
-Run: `PYTHONPATH=backend pytest backend/tests/test_currency_service.py -v`
-Expected: FAIL (ModuleNotFoundError or Import error)
-
-- [ ] **Step 3: Implement `CurrencyService` with caching and Yahoo Finance integration**
-
-```python
-# backend/app/services/currency_service.py
-import httpx
-from datetime import datetime
-
-class CurrencyService:
-    def __init__(self):
-        self.cache = {}
-
-    async def get_rate(self, from_curr: str, to_curr: str, date: datetime) -> float:
-        # 1. Check cache
-        # 2. If not in cache, fetch from Yahoo Finance (e.g. yfinance or direct API)
-        # 3. Update cache and return
-        pass
-```
-
-- [ ] **Step 4: Run test to verify it passes**
-Run: `PYTHONPATH=backend pytest backend/tests/test_currency_service.py -v`
-Expected: PASS
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/app/services/currency_service.py backend/tests/test_currency_service.py
-git commit -m "feat: implement CurrencyService with caching"
-```
-
-### Task 3: Tax Engine Integration
-
-**Files:**
-- Modify: `backend/app/tax_engine.py`
-- Test: `backend/tests/test_tax_engine.py`
-
-- [ ] **Step 1: Update `TaxLotEngine.calculate_lots` signature and logic**
-
-```python
-# backend/app/tax_engine.py
-class TaxLotEngine:
-    @staticmethod
-    async def calculate_lots(
-        symbol: str,
-        asset_type: str,
-        transactions: list,
-        current_price: float,
-        strategy: str,
-        base_currency: str,          # New
-        currency_service: Any,       # New
-        hybrid_threshold_days: int = 30
-    ):
-        # Logic to convert transaction prices to base_currency using currency_service
-        pass
-```
-
-- [ ] **Step 2: Update existing tests in `test_tax_engine.py` to match new signature**
-
-- [ ] **Step 3: Write new multi-currency test case**
-
-```python
-# backend/tests/test_tax_engine.py
-@pytest.mark.asyncio
-async def test_multi_currency_fifo():
-    # Buy 10 AAPL (USD) at 100, Sell 5 AAPL (USD) at 150. Portfolio is EUR.
-    # Mock CurrencyService to return EURUSD = 0.9
-    # Expected realized P&L in EUR = (5 * 150 * 0.9) - (5 * 100 * 0.9) = 225 EUR
-    pass
-```
-
-- [ ] **Step 4: Run tests and verify pass**
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add backend/app/tax_engine.py backend/tests/test_tax_engine.py
-git commit -m "feat: integrate CurrencyService into TaxLotEngine"
-```
-
 ### Task 4: Stats Engine Integration
 
 **Files:**
 - Modify: `backend/app/stats_engine.py`
 - Test: `backend/tests/test_stats_engine.py`
 
-- [ ] **Step 1: Update `StatsEngine` to handle base currency conversion for daily values**
+- [ ] **Step 1: Update `StatsEngine.calculate_portfolio_performance` to be async and accept `base_currency` and `currency_service`**
 
-- [ ] **Step 2: Write/Update tests to verify metrics (TWR, Volatility) are calculated in base currency**
+```python
+# backend/app/stats_engine.py
 
-- [ ] **Step 3: Commit**
+class StatsEngine:
+    @staticmethod
+    async def calculate_portfolio_performance(
+        db: Session,
+        assets: List[Asset],
+        transactions: List[Transaction],
+        base_currency: str,
+        currency_service: CurrencyService
+    ) -> Dict[str, Any]:
+        # ... implementation ...
+```
 
-### Task 5: Frontend UI Updates
+- [ ] **Step 2: Implement currency conversion in `calculate_portfolio_performance`**
+    - For daily portfolio value:
+      ```python
+      for i, d in enumerate(dates):
+          val = 0.0
+          for asset in assets:
+              symbol = asset.symbol
+              price = price_df.loc[d, symbol] if symbol in price_df.columns else 0.0
+              qty = qty_dict[symbol][i]
+              
+              if asset.currency != base_currency:
+                  rate = await currency_service.get_rate(asset.currency, base_currency, d)
+                  price *= rate
+              val += qty * price
+          portfolio_values[i] = val
+      ```
+    - For daily cash flows (transactions):
+      ```python
+      for tx in sorted_txs:
+          tx_date = tx.date.date()
+          if tx_date in dates:
+              idx = dates.index(tx_date)
+              # Get asset currency
+              asset = db.query(Asset).get(tx.asset_id)
+              cost = tx.quantity * tx.price
+              
+              if asset.currency != base_currency:
+                  rate = await currency_service.get_rate(asset.currency, base_currency, tx.date)
+                  cost *= rate
+                  # fee is usually in asset currency too? Let's assume so.
+                  # tx.fee is also converted.
+                  # ...
+              
+              if tx.type.upper() == "BUY":
+                  daily_cash_flow[idx] += (cost + tx.fee) # need to convert fee too
+              elif tx.type.upper() == "SELL":
+                  daily_cash_flow[idx] -= (cost - tx.fee)
+      ```
 
-**Files:**
-- Modify: `frontend/src/components/PortfolioDetail.jsx`
-- Modify: `frontend/src/App.jsx`
+- [ ] **Step 3: Write failing test in `backend/tests/test_stats_engine.py`**
 
-- [ ] **Step 1: Add currency selector to "Add Asset" modal in `PortfolioDetail.jsx`**
+```python
+@pytest.mark.asyncio
+async def test_calculate_portfolio_performance_multi_currency():
+    # 1. Setup in-memory DB with Portfolio (USD), Asset1 (USD), Asset2 (EUR)
+    # 2. Add Transactions
+    # 3. Mock CurrencyService.get_rate to return 1.1 for EUR->USD
+    # 4. Run calculate_portfolio_performance
+    # 5. Assert portfolio_value and TWR match expected base-currency values
+    pass
+```
 
-- [ ] **Step 2: Update asset registration payload in `App.jsx` to include the selected currency**
+- [ ] **Step 4: Run test to verify it fails**
 
-- [ ] **Step 3: Update UI to display currency symbols (e.g., "$", "€")**
+Run: `PYTHONPATH=backend pytest backend/tests/test_stats_engine.py -v`
+Expected: FAIL (due to missing arguments or unhandled currency)
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Implement minimal code to make the test pass**
 
-### Task 6: Documentation Cleanup
+- [ ] **Step 6: Run test to verify it passes**
 
-**Files:**
-- Modify: `docs/implementation_plan.md`
-- Modify: `AGENTS.md`
+Run: `PYTHONPATH=backend pytest backend/tests/test_stats_engine.py -v`
+Expected: PASS
 
-- [ ] **Step 1: Update documentation to reflect the completed architecture**
+- [ ] **Step 7: Commit**
 
-- [ ] **Step 2: Commit**
+```bash
+git add backend/app/stats_engine.py backend/tests/test_stats_engine.py
+git commit -m "feat: integrate CurrencyService into StatsEngine"
+```
