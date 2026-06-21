@@ -1,6 +1,7 @@
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { DollarSign, ArrowUpRight, ArrowDownRight, Briefcase, TrendingUp } from 'lucide-react';
+import { formatCurrency, formatPercent } from '../utils/formatters';
 
 const COLORS = ['#6366f1', '#a855f7', '#f59e0b', '#10b981', '#ec4899'];
 
@@ -29,16 +30,6 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
   const unrealizedPnl = metrics.unrealized_pnl;
   const totalGains = realizedPnl + unrealizedPnl;
   
-  // Format currency
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
-  };
-
-  // Format percentage
-  const formatPercent = (val) => {
-    return `${val >= 0 ? '+' : ''}${(val * 100).toFixed(2)}%`;
-  };
-
   // Prepare allocation data
   const allocationMap = {};
   taxSummary.assets.forEach(a => {
@@ -61,7 +52,7 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
       <div className="metrics-grid">
         <div className="glass-card metric-card">
           <div className="metric-label">Net Asset Value</div>
-          <div className="metric-value">{formatCurrency(totalValue)}</div>
+          <div className="metric-value">{formatCurrency(totalValue, taxSummary?.currency || 'USD')}</div>
           <div className="metric-change positive">
             <DollarSign size={14} /> Live Market Prices
           </div>
@@ -70,7 +61,7 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
         <div className="glass-card metric-card">
           <div className="metric-label">Total Realized P&L</div>
           <div className="metric-value" style={{ color: realizedPnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            {formatCurrency(realizedPnl)}
+            {formatCurrency(realizedPnl, taxSummary?.currency || 'USD')}
           </div>
           <div className={`metric-change ${realizedPnl >= 0 ? 'positive' : 'negative'}`}>
             {realizedPnl >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />} Realized Tax Gains
@@ -80,7 +71,7 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
         <div className="glass-card metric-card">
           <div className="metric-label">Latent P&L (Unrealized)</div>
           <div className="metric-value" style={{ color: unrealizedPnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            {formatCurrency(unrealizedPnl)}
+            {formatCurrency(unrealizedPnl, taxSummary?.currency || 'USD')}
           </div>
           <div className={`metric-change ${unrealizedPnl >= 0 ? 'positive' : 'negative'}`}>
             {unrealizedPnl >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
@@ -91,7 +82,7 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
         <div className="glass-card metric-card">
           <div className="metric-label">Total Portfolio Return</div>
           <div className="metric-value" style={{ color: totalGains >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-            {formatCurrency(totalGains)}
+            {formatCurrency(totalGains, taxSummary?.currency || 'USD')}
           </div>
           <div className={`metric-change ${totalGains >= 0 ? 'positive' : 'negative'}`}>
             {totalGains >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />} Cumulative P&L
@@ -132,7 +123,7 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
                       color: 'var(--text-primary)'
                     }}
                     formatter={(value, name) => {
-                      if (name === 'value') return [formatCurrency(value), 'Portfolio Value'];
+                      if (name === 'value') return [formatCurrency(value, taxSummary?.currency || 'USD'), 'Portfolio Value'];
                       if (name === 'twr') return [formatPercent(value), 'Time-Weighted Return'];
                       return [value, name];
                     }}
@@ -170,7 +161,7 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
                       border: '1px solid var(--border-color)', 
                       borderRadius: '8px'
                     }}
-                    formatter={(value) => formatCurrency(value)}
+                    formatter={(value) => formatCurrency(value, taxSummary?.currency || 'USD')}
                   />
                 </PieChart>
               </ResponsiveContainer>

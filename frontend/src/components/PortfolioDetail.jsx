@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Trash2, Calendar, FileText, ChevronDown, ChevronUp, DollarSign } from 'lucide-react';
+import { formatCurrency, formatPercent } from '../utils/formatters';
 
 export default function PortfolioDetail({ 
   portfolio, 
@@ -19,22 +20,14 @@ export default function PortfolioDetail({
   const [showTxModal, setShowTxModal] = useState(false);
   
   // Forms State
-  const [assetForm, setAssetForm] = useState({ symbol: '', name: '', asset_type: 'STOCK', sector: '' });
+  const [assetForm, setAssetForm] = useState({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD' });
   const [txForm, setTxForm] = useState({ asset_id: '', type: 'BUY', quantity: '', price: '', fee: '0.0', date: new Date().toISOString().slice(0, 16) });
-
-  const formatCurrency = (val) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
-  };
-
-  const formatPercent = (val) => {
-    return `${val >= 0 ? '+' : ''}${(val * 100).toFixed(2)}%`;
-  };
 
   const handleAssetSubmit = (e) => {
     e.preventDefault();
     if (!assetForm.symbol || !assetForm.name) return;
     onAddAsset(assetForm);
-    setAssetForm({ symbol: '', name: '', asset_type: 'STOCK', sector: '' });
+    setAssetForm({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD' });
     setShowAssetModal(false);
   };
 
@@ -156,14 +149,14 @@ export default function PortfolioDetail({
                         </span>
                       </td>
                       <td>{a.current_shares.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
-                      <td>{formatCurrency(a.average_cost)}</td>
-                      <td>{formatCurrency(a.current_price)}</td>
-                      <td style={{ fontWeight: 600 }}>{formatCurrency(a.market_value)}</td>
+                      <td>{formatCurrency(a.average_cost, assetModel?.currency || 'USD')}</td>
+                      <td>{formatCurrency(a.current_price, assetModel?.currency || 'USD')}</td>
+                      <td style={{ fontWeight: 600 }}>{formatCurrency(a.market_value, assetModel?.currency || 'USD')}</td>
                       <td style={{ color: a.realized_pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        {formatCurrency(a.realized_pnl)}
+                        {formatCurrency(a.realized_pnl, assetModel?.currency || 'USD')}
                       </td>
                       <td style={{ color: a.unrealized_pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        {formatCurrency(a.unrealized_pnl)}
+                        {formatCurrency(a.unrealized_pnl, assetModel?.currency || 'USD')}
                       </td>
                       <td style={{ fontWeight: 600, color: a.unrealized_roi >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                         {formatPercent(a.unrealized_roi)}
@@ -205,11 +198,11 @@ export default function PortfolioDetail({
                                   {a.tax_lots.map((lot, index) => (
                                     <tr key={index}>
                                       <td>{new Date(lot.buy_date).toLocaleDateString()}</td>
-                                      <td>{formatCurrency(lot.buy_price)}</td>
+                                      <td>{formatCurrency(lot.buy_price, assetModel?.currency || 'USD')}</td>
                                       <td>{lot.remaining_qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
                                       <td>{lot.original_qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
                                       <td style={{ color: lot.latent_gain_loss >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                        {formatCurrency(lot.latent_gain_loss)}
+                                        {formatCurrency(lot.latent_gain_loss, assetModel?.currency || 'USD')}
                                       </td>
                                       <td style={{ color: lot.latent_roi >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                                         {formatPercent(lot.latent_roi)}
@@ -268,6 +261,21 @@ export default function PortfolioDetail({
                   <option value="CRYPTO">Crypto</option>
                   <option value="ETF">ETF</option>
                   <option value="MUTUAL_FUND">Mutual Fund</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label>Currency</label>
+                <select 
+                  value={assetForm.currency} 
+                  onChange={(e) => setAssetForm({ ...assetForm, currency: e.target.value })} 
+                  className="form-control"
+                >
+                  <option value="USD">USD</option>
+                  <option value="EUR">EUR</option>
+                  <option value="GBP">GBP</option>
+                  <option value="JPY">JPY</option>
+                  <option value="BTC">BTC</option>
+                  <option value="ETH">ETH</option>
                 </select>
               </div>
               <div className="form-group">
