@@ -1,26 +1,34 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, ChangeEvent, FormEvent, useCallback } from 'react';
 import { 
   LayoutDashboard, 
   Briefcase, 
   BarChart3, 
   History, 
   Plus, 
-  Database, 
   Loader2, 
   AlertTriangle,
   FolderOpen,
-  Settings,
-  Sparkles
+  Sparkles,
+  Trash2
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import PortfolioDetail from './components/PortfolioDetail';
+import AnalyticsView from './components/AnalyticsView';
 import { formatCurrency } from './utils/formatters';
+import { 
+  Portfolio, 
+  PortfolioPerformance, 
+  TaxSummary, 
+  Transaction, 
+  Asset,
+  TransactionType
+} from './types';
 
 const API_BASE = 'http://127.0.0.1:8000/api';
 
 export default function App() {
-  const [portfolios, setPortfolios] = useState([]);
-  const [selectedId, setSelectedId] = useState(null);
+  const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
+  const [selectedId, setSelectedId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, portfolios, analytics, ledger
   
   // Tax state
@@ -28,30 +36,19 @@ export default function App() {
   const [thresholdDays, setThresholdDays] = useState(30);
 
   // Loaded analytics
-  const [performance, setPerformance] = useState(null);
-  const [taxSummary, setTaxSummary] = useState(null);
-  const [transactions, setTransactions] = useState([]);
+  const [performance, setPerformance] = useState<PortfolioPerformance | null>(null);
+  const [taxSummary, setTaxSummary] = useState<TaxSummary | null>(null);
+  const [transactions, setTransactions] = useState<Transaction[]>([]);
 
   // UI state
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
+  const [error, setError] = useState<string | null>(null);
   const [showNewPortfolioModal, setShowNewPortfolioModal] = useState(false);
   const [newPortfolioName, setNewPortfolioName] = useState('');
   const [newPortfolioDesc, setNewPortfolioDesc] = useState('');
 
   // Fetch initial portfolios list
-  useEffect(() => {
-    fetchPortfolios();
-  }, []);
-
-  // Fetch details whenever selected portfolio, strategy, or threshold changes
-  useEffect(() => {
-    if (selectedId) {
-      fetchPortfolioData(selectedId);
-    }
-  }, [selectedId, strategy, thresholdDays]);
-
-  const fetchPortfolios = async () => {
+  const fetchPortfolios = useCallback(async () => {
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/portfolios/`);
@@ -63,12 +60,12 @@ export default function App() {
       }
       setLoading(false);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     }
-  };
+  }, [selectedId]);
 
-  const fetchPortfolioData = async (id) => {
+  const fetchPortfolioData = useCallback(async (id: number) => {
     try {
       setLoading(true);
       setError(null);
@@ -93,12 +90,29 @@ export default function App() {
 
       setLoading(false);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     }
-  };
+  }, [strategy, thresholdDays]);
 
-  const handleCreatePortfolio = async (e) => {
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      fetchPortfolios();
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [fetchPortfolios]);
+
+  // Fetch details whenever selected portfolio, strategy, or threshold changes
+  useEffect(() => {
+    if (selectedId) {
+      const timer = setTimeout(() => {
+        fetchPortfolioData(selectedId);
+      }, 0);
+      return () => clearTimeout(timer);
+    }
+  }, [selectedId, fetchPortfolioData]);
+
+  const handleCreatePortfolio = async (e: FormEvent) => {
     e.preventDefault();
     if (!newPortfolioName) return;
     try {
@@ -117,12 +131,12 @@ export default function App() {
       setShowNewPortfolioModal(false);
       setLoading(false);
     } catch (err) {
-      setError(err.message);
+      setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     }
   };
 
-  const handleAddAsset = async (assetData) => {
+  const handleAddAsset = async (assetData: Partial<Asset>) => {
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/portfolios/${selectedId}/assets/`, {
@@ -134,30 +148,30 @@ export default function App() {
         const errorData = await res.json();
         throw new Error(errorData.detail || 'Failed to add asset');
       }
-      await fetchPortfolioData(selectedId);
+      if (selectedId) await fetchPortfolioData(selectedId);
       // Also refresh main list to include assets
       fetchPortfolios();
     } catch (err) {
-      alert(`Error adding asset: ${err.message}`);
+      setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
     }
   };
 
-  const handleDeleteAsset = async (assetId) => {
+  const handleDeleteAsset = async (assetId: number) => {
     if (!confirm('Are you sure you want to delete this asset? All associated transactions will be removed.')) return;
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/assets/${assetId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete asset');
-      await fetchPortfolioData(selectedId);
+      if (selectedId) await fetchPortfolioData(selectedId);
       fetchPortfolios();
     } catch (err) {
-      alert(`Error deleting asset: ${err.message}`);
+      alert(`Error deleting asset: ${err instanceof Error ? err.message : String(err)}`);
       setLoading(false);
     }
   };
 
-  const handleAddTransaction = async (assetId, txData) => {
+  const handleAddTransaction = async (assetId: number, txData: Partial<Transaction>) => {
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/portfolios/${selectedId}/assets/${assetId}/transactions/`, {
@@ -166,22 +180,22 @@ export default function App() {
         body: JSON.stringify(txData)
       });
       if (!res.ok) throw new Error('Failed to log transaction');
-      await fetchPortfolioData(selectedId);
+      if (selectedId) await fetchPortfolioData(selectedId);
     } catch (err) {
-      alert(`Error logging transaction: ${err.message}`);
+      alert(`Error logging transaction: ${err instanceof Error ? err.message : String(err)}`);
       setLoading(false);
     }
   };
 
-  const handleDeleteTransaction = async (txId) => {
+  const handleDeleteTransaction = async (txId: number) => {
     if (!confirm('Delete this transaction?')) return;
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/transactions/${txId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete transaction');
-      await fetchPortfolioData(selectedId);
+      if (selectedId) await fetchPortfolioData(selectedId);
     } catch (err) {
-      alert(`Error deleting transaction: ${err.message}`);
+      alert(`Error deleting transaction: ${err instanceof Error ? err.message : String(err)}`);
       setLoading(false);
     }
   };
@@ -201,7 +215,7 @@ export default function App() {
           description: 'Diverse core tactical allocation comprising stocks, cryptos, and ETFs.' 
         })
       });
-      const p = await pRes.json();
+       const p: Portfolio = await pRes.json();
 
       // 2. Add symbols: AAPL (Stock), BTC-USD (Crypto), SPY (ETF)
        const symbols = [
@@ -211,20 +225,20 @@ export default function App() {
          { symbol: 'SAP.DE', name: 'SAP SE', asset_type: 'STOCK', sector: 'Technology', currency: 'EUR' }
        ];
 
-      const createdAssets = {};
+       const createdAssets: Record<string, number> = {};
       for (const s of symbols) {
         const aRes = await fetch(`${API_BASE}/portfolios/${p.id}/assets/`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(s)
         });
-        const a = await aRes.json();
+         const a: Asset = await aRes.json();
         createdAssets[s.symbol] = a.id;
       }
 
       // 3. Log transactions over the past months to build history
       const now = new Date();
-      const txs = [
+       const txs: Array<{ symbol: string; type: TransactionType; qty: number; price: number; fee: number; daysAgo: number }> = [
         // AAPL Buys
         { symbol: 'AAPL', type: 'BUY', qty: 20, price: 175.0, fee: 5.0, daysAgo: 60 },
         { symbol: 'AAPL', type: 'BUY', qty: 15, price: 185.0, fee: 5.0, daysAgo: 30 },
@@ -264,7 +278,7 @@ export default function App() {
       await fetchPortfolios();
       setSelectedId(p.id);
     } catch (err) {
-      setError(`Failed to create demo portfolio: ${err.message}`);
+      setError(`Failed to create demo portfolio: ${err instanceof Error ? err.message : String(err)}`);
       setLoading(false);
     }
   };
@@ -301,7 +315,7 @@ export default function App() {
           {portfolios.length > 0 ? (
             <select 
               value={selectedId || ''} 
-              onChange={(e) => setSelectedId(parseInt(e.target.value))}
+               onChange={(e: ChangeEvent<HTMLSelectElement>) => setSelectedId(parseInt(e.target.value))}
               className="form-control"
               style={{ marginBottom: '12px' }}
             >
@@ -466,7 +480,7 @@ export default function App() {
                   value={newPortfolioDesc} 
                   onChange={(e) => setNewPortfolioDesc(e.target.value)} 
                   className="form-control"
-                  rows="3"
+                  rows={3}
                   placeholder="Describe the objective of this portfolio..."
                 />
               </div>

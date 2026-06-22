@@ -1,6 +1,26 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, Calendar, FileText, ChevronDown, ChevronUp, DollarSign } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatCurrency, formatPercent } from '../utils/formatters';
+import { 
+  Portfolio, 
+  TaxSummary, 
+  Asset, 
+  Transaction, 
+  TransactionType, 
+  AssetType
+} from '../types';
+
+interface PortfolioDetailProps {
+  portfolio: Portfolio;
+  taxSummary: TaxSummary;
+  onAddAsset: (assetData: Partial<Asset>) => Promise<void>;
+  onDeleteAsset: (assetId: number) => Promise<void>;
+  onAddTransaction: (assetId: number, txData: Partial<Transaction>) => Promise<void>;
+  strategy: string;
+  setStrategy: (strategy: string) => void;
+  thresholdDays: number;
+  setThresholdDays: (days: number) => void;
+}
 
 export default function PortfolioDetail({ 
   portfolio, 
@@ -8,33 +28,31 @@ export default function PortfolioDetail({
   onAddAsset, 
   onDeleteAsset, 
   onAddTransaction, 
-  onDeleteTransaction, 
   strategy, 
   setStrategy, 
   thresholdDays, 
-  setThresholdDays,
-  transactions
-}) {
-  const [expandedAsset, setExpandedAsset] = useState(null);
+  setThresholdDays
+}: PortfolioDetailProps) {
+  const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
   const [showAssetModal, setShowAssetModal] = useState(false);
   const [showTxModal, setShowTxModal] = useState(false);
   
   // Forms State
-  const [assetForm, setAssetForm] = useState({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD' });
-  const [txForm, setTxForm] = useState({ asset_id: '', type: 'BUY', quantity: '', price: '', fee: '0.0', date: new Date().toISOString().slice(0, 16) });
-
-  const handleAssetSubmit = (e) => {
+  const [assetForm, setAssetForm] = useState<Partial<Asset>>({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD' });
+  const [txForm, setTxForm] = useState({ asset_id: '', type: 'BUY' as TransactionType, quantity: '', price: '', fee: '0.0', date: new Date().toISOString().slice(0, 16) });
+  
+  const handleAssetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!assetForm.symbol || !assetForm.name) return;
-    onAddAsset(assetForm);
+    await onAddAsset(assetForm);
     setAssetForm({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD' });
     setShowAssetModal(false);
   };
 
-  const handleTxSubmit = (e) => {
+  const handleTxSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!txForm.asset_id || !txForm.quantity || !txForm.price) return;
-    onAddTransaction(txForm.asset_id, {
+    await onAddTransaction(Number(txForm.asset_id), {
       type: txForm.type,
       quantity: parseFloat(txForm.quantity),
       price: parseFloat(txForm.price),
@@ -49,7 +67,7 @@ export default function PortfolioDetail({
   const assets = portfolio.assets || [];
 
   return (
-    <div>
+    <div className="portfolio-detail-container">
       {/* Portfolio Info / Tax Selector */}
       <div className="glass-card" style={{ padding: '24px', marginBottom: '32px' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '20px' }}>
@@ -177,7 +195,7 @@ export default function PortfolioDetail({
                     {/* Expanded Tax Lots Row */}
                     {isExpanded && (
                       <tr>
-                        <td colSpan="11" style={{ padding: '0 16px 24px 56px', background: 'rgba(255,255,255,0.01)' }}>
+                        <td colSpan={11} style={{ padding: '0 16px 24px 56px', background: 'rgba(255,255,255,0.01)' }}>
                           <div style={{ padding: '16px', background: 'rgba(10, 15, 28, 0.5)', borderRadius: '12px', border: '1px solid var(--border-color)' }}>
                             <h4 style={{ fontSize: '0.875rem', marginBottom: '12px', color: 'var(--color-primary)' }}>Tax Lots (Unrealized Profit Details)</h4>
                             {a.tax_lots.length === 0 ? (
@@ -254,7 +272,8 @@ export default function PortfolioDetail({
                 <label>Asset Type</label>
                 <select 
                   value={assetForm.asset_type} 
-                  onChange={(e) => setAssetForm({ ...assetForm, asset_type: e.target.value })} 
+                   onChange={(e) => setAssetForm({ ...assetForm, asset_type: e.target.value as AssetType })} 
+
                   className="form-control"
                 >
                   <option value="STOCK">Stock</option>
@@ -320,7 +339,7 @@ export default function PortfolioDetail({
                 <label>Transaction Type</label>
                 <select 
                   value={txForm.type} 
-                  onChange={(e) => setTxForm({ ...txForm, type: e.target.value })} 
+                  onChange={(e) => setTxForm({ ...txForm, type: e.target.value as TransactionType })} 
                   className="form-control"
                 >
                   <option value="BUY">BUY</option>
