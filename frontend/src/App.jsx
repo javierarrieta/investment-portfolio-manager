@@ -204,11 +204,12 @@ export default function App() {
       const p = await pRes.json();
 
       // 2. Add symbols: AAPL (Stock), BTC-USD (Crypto), SPY (ETF)
-      const symbols = [
-        { symbol: 'AAPL', name: 'Apple Inc.', asset_type: 'STOCK', sector: 'Technology' },
-        { symbol: 'BTC-USD', name: 'Bitcoin', asset_type: 'CRYPTO', sector: 'Financial' },
-        { symbol: 'SPY', name: 'SPDR S&P 500 ETF', asset_type: 'ETF', sector: 'Index' }
-      ];
+       const symbols = [
+         { symbol: 'AAPL', name: 'Apple Inc.', asset_type: 'STOCK', sector: 'Technology', currency: 'USD' },
+         { symbol: 'BTC-USD', name: 'Bitcoin', asset_type: 'CRYPTO', sector: 'Financial', currency: 'USD' },
+         { symbol: 'SPY', name: 'SPDR S&P 500 ETF', asset_type: 'ETF', sector: 'Index', currency: 'USD' },
+         { symbol: 'SAP.DE', name: 'SAP SE', asset_type: 'STOCK', sector: 'Technology', currency: 'EUR' }
+       ];
 
       const createdAssets = {};
       for (const s of symbols) {
@@ -235,10 +236,14 @@ export default function App() {
         { symbol: 'BTC-USD', type: 'BUY', qty: 0.15, price: 65000.0, fee: 10.0, daysAgo: 15 },
         { symbol: 'BTC-USD', type: 'SELL', qty: 0.10, price: 69000.0, fee: 12.0, daysAgo: 1 },
 
-        // SPY Buys
-        { symbol: 'SPY', type: 'BUY', qty: 30, price: 500.0, fee: 0.0, daysAgo: 90 },
-        { symbol: 'SPY', type: 'BUY', qty: 10, price: 520.0, fee: 0.0, daysAgo: 25 }
-      ];
+         // SPY Buys
+         { symbol: 'SPY', type: 'BUY', qty: 30, price: 500.0, fee: 0.0, daysAgo: 90 },
+         { symbol: 'SPY', type: 'BUY', qty: 10, price: 520.0, fee: 0.0, daysAgo: 25 },
+
+         // SAP.DE Buys
+         { symbol: 'SAP.DE', type: 'BUY', qty: 5, price: 170.0, fee: 2.0, daysAgo: 40 },
+         { symbol: 'SAP.DE', type: 'BUY', qty: 5, price: 175.0, fee: 2.0, daysAgo: 10 }
+       ];
 
       for (const tx of txs) {
         const txDate = new Date(now.getTime() - tx.daysAgo * 24 * 60 * 60 * 1000);
