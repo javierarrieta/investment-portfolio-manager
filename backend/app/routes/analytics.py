@@ -4,6 +4,7 @@ from datetime import date, timedelta
 from typing import List, Dict, Any
 import yfinance as yf
 from ..database import get_db
+from .. import models
 from ..services.currency_service import CurrencyService
 from ..tax_engine import TaxLotEngine
 from ..stats_engine import StatsEngine
@@ -12,6 +13,7 @@ router = APIRouter(
     prefix="/portfolios",
     tags=["analytics"]
 )
+
 
 def get_current_prices(db: Session, symbols: List[str]) -> Dict[str, float]:
     """
@@ -64,7 +66,7 @@ def get_current_prices(db: Session, symbols: List[str]) -> Dict[str, float]:
 
 
 @router.get("/{portfolio_id}/tax-summary", response_model=Dict[str, Any])
-def get_portfolio_tax_summary(
+async def get_portfolio_tax_summary(
     portfolio_id: int,
     strategy: str = Query("FIFO", description="Tax matching strategy: FIFO, LIFO, or HYBRID"),
     threshold_days: int = Query(30, description="Short-term holding threshold in days for HYBRID strategy"),
@@ -81,6 +83,7 @@ def get_portfolio_tax_summary(
     import pandas as pd # Import pandas locally just in case it is used by pd.isna
     current_prices = get_current_prices(db, symbols)
 
+    currency_service = CurrencyService()
     asset_summaries = []
     total_value = 0.0
     total_realized = 0.0
@@ -88,11 +91,14 @@ def get_portfolio_tax_summary(
 
     for asset in portfolio.assets:
         price = current_prices.get(asset.symbol, 0.0)
-        summary = TaxLotEngine.calculate_lots(
+        summary = await TaxLotEngine.calculate_lots(
             symbol=asset.symbol,
             asset_type=asset.asset_type,
             transactions=asset.transactions,
             current_price=price,
+            asset_currency=asset.currency,
+            base_currency=portfolio.base_currency,
+            currency_service=currency_service,
             strategy=strategy,
             hybrid_threshold_days=threshold_days
         )
