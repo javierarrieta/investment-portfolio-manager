@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
 import PortfolioDetail from './components/PortfolioDetail';
-import AnalyticsView from './components/AnalyticsView';
+import { formatCurrency } from './utils/formatters';
 
 const API_BASE = 'http://127.0.0.1:8000/api';
 
@@ -404,9 +404,9 @@ export default function App() {
                               </span>
                             </td>
                             <td>{tx.quantity.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
-                            <td>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(tx.price)}</td>
-                            <td>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(tx.fee)}</td>
-                            <td style={{ fontWeight: 600 }}>{new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(total)}</td>
+                             <td>{formatCurrency(tx.price, asset?.currency || 'USD')}</td>
+                             <td>{formatCurrency(tx.fee, asset?.currency || 'USD')}</td>
+                             <td style={{ fontWeight: 600 }}>{formatCurrency(total, asset?.currency || 'USD')}</td>
                             <td>
                               <button 
                                 onClick={() => handleDeleteTransaction(tx.id)}
