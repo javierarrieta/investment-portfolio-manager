@@ -4,7 +4,7 @@ from datetime import date, timedelta
 from typing import List, Dict, Any
 import yfinance as yf
 from ..database import get_db
-from .. import models, schemas
+from ..services.currency_service import CurrencyService
 from ..tax_engine import TaxLotEngine
 from ..stats_engine import StatsEngine
 
@@ -112,7 +112,7 @@ def get_portfolio_tax_summary(
 
 
 @router.get("/{portfolio_id}/performance", response_model=Dict[str, Any])
-def get_portfolio_performance(portfolio_id: int, db: Session = Depends(get_db)):
+async def get_portfolio_performance(portfolio_id: int, db: Session = Depends(get_db)):
     portfolio = db.query(models.Portfolio).filter(models.Portfolio.id == portfolio_id).first()
     if not portfolio:
         raise HTTPException(status_code=404, detail="Portfolio not found")
@@ -124,7 +124,14 @@ def get_portfolio_performance(portfolio_id: int, db: Session = Depends(get_db)):
 
     import pandas as pd # Ensure pandas is imported
 
-    perf_data = StatsEngine.calculate_portfolio_performance(db, assets, transactions)
+    currency_service = CurrencyService()
+    perf_data = await StatsEngine.calculate_portfolio_performance(
+        db, 
+        assets, 
+        transactions, 
+        base_currency=portfolio.base_currency, 
+        currency_service=currency_service
+    )
     
     # Add tax realized/unrealized P&L to metrics using default FIFO for high-level dashboard
     symbols = [a.symbol for a in assets]
@@ -134,11 +141,14 @@ def get_portfolio_performance(portfolio_id: int, db: Session = Depends(get_db)):
     unrealized_total = 0.0
     for asset in assets:
         price = prices.get(asset.symbol, 0.0)
-        summary = TaxLotEngine.calculate_lots(
+        summary = await TaxLotEngine.calculate_lots(
             symbol=asset.symbol,
             asset_type=asset.asset_type,
             transactions=asset.transactions,
             current_price=price,
+            asset_currency=asset.currency,
+            base_currency=portfolio.base_currency,
+            currency_service=currency_service,
             strategy="FIFO"
         )
         realized_total += summary["realized_pnl"]
