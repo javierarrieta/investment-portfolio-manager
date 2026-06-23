@@ -1,7 +1,8 @@
 import React from 'react';
-import { ShieldAlert, Info, TrendingUp, Percent, Flame } from 'lucide-react';
+import { ShieldAlert, Info, TrendingUp, Flame } from 'lucide-react';
+import { PortfolioPerformance } from '../types';
 
-export default function AnalyticsView({ performance }) {
+export default function AnalyticsView({ performance }: { performance: PortfolioPerformance | null }) {
   if (!performance || !performance.metrics || performance.history.length === 0) {
     return (
       <div className="glass-card" style={{ padding: '48px', textAlign: 'center' }}>
@@ -16,16 +17,16 @@ export default function AnalyticsView({ performance }) {
 
   const { metrics, correlation_matrix } = performance;
 
-  const formatPercent = (val) => {
+  const formatPercent = (val: number) => {
     return `${(val * 100).toFixed(2)}%`;
   };
 
-  const formatCurrency = (val) => {
+  const formatCurrency = (val: number) => {
     return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
   };
 
   // Get color for correlation cells
-  const getCellColor = (val) => {
+  const getCellColor = (val: number | undefined | null) => {
     if (val === undefined || val === null) return 'rgba(255,255,255,0.05)';
     // Scale color from red (-1) to dark slate (0) to blue/purple (+1)
     if (val > 0) {
@@ -39,12 +40,12 @@ export default function AnalyticsView({ performance }) {
   const symbols = Object.keys(correlation_matrix || {});
 
   return (
-    <div>
+    <div className="analytics-container">
       {/* Risk Metrics Cards */}
       <div className="metrics-grid">
         <div className="glass-card metric-card">
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            Annualized Volatility <Info size={14} title="Measure of standard deviation of portfolio daily returns multiplied by sqrt(252). Indicates general portfolio price variability." />
+            Annualized Volatility <span title="Measure of standard deviation of portfolio daily returns multiplied by sqrt(252). Indicates general portfolio price variability."><Info size={14} /></span>
           </div>
           <div className="metric-value">{formatPercent(metrics.volatility || 0.0)}</div>
           <div className="metric-change" style={{ color: (metrics.volatility || 0.0) < 0.25 ? 'var(--color-success)' : 'var(--color-warning)' }}>
@@ -54,7 +55,7 @@ export default function AnalyticsView({ performance }) {
 
         <div className="glass-card metric-card">
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            Sharpe Ratio <Info size={14} title="Excess return per unit of volatility. Risk-free rate assumed at 2%. Values > 1.0 are considered good, > 2.0 very good." />
+            Sharpe Ratio <span title="Excess return per unit of volatility. Risk-free rate assumed at 2%. Values > 1.0 are considered good, > 2.0 very good."><Info size={14} /></span>
           </div>
           <div className="metric-value">{(metrics.sharpe_ratio || 0.0).toFixed(2)}</div>
           <div className="metric-change" style={{ color: (metrics.sharpe_ratio || 0) >= 1.0 ? 'var(--color-success)' : 'var(--text-muted)' }}>
@@ -64,7 +65,7 @@ export default function AnalyticsView({ performance }) {
 
         <div className="glass-card metric-card">
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            Portfolio Beta <Info size={14} title="Sensitivity of the portfolio to market movements (SPY benchmark). Beta > 1 is more volatile than market; Beta < 1 is less volatile." />
+            Portfolio Beta <span title="Sensitivity of the portfolio to market movements (SPY benchmark). Beta > 1 is more volatile than market; Beta < 1 is less volatile."><Info size={14} /></span>
           </div>
           <div className="metric-value">{(metrics.beta || 1.0).toFixed(2)}</div>
           <div className="metric-change" style={{ color: Math.abs((metrics.beta || 1) - 1.0) < 0.2 ? 'var(--text-primary)' : 'var(--color-secondary)' }}>
@@ -74,7 +75,7 @@ export default function AnalyticsView({ performance }) {
 
         <div className="glass-card metric-card">
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-            Beta-Adjusted Net Exposure <Info size={14} title="Equivalent exposure of the portfolio compared to SPY. Formula: Portfolio Value * Portfolio Beta." />
+            Beta-Adjusted Net Exposure <span title="Equivalent exposure of the portfolio compared to SPY. Formula: Portfolio Value * Portfolio Beta."><Info size={14} /></span>
           </div>
           <div className="metric-value">{formatCurrency(metrics.beta_adjusted_exposure || 0.0)}</div>
           <div className="metric-change positive">

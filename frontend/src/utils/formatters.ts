@@ -1,5 +1,5 @@
-export const formatCurrency = (value, currencyCode = 'USD') => {
-  const CRYPTO_SYMBOLS = {
+export const formatCurrency = (value: number, currencyCode: string = 'USD'): string => {
+  const CRYPTO_SYMBOLS: Record<string, string> = {
     'BTC': '₿',
     'ETH': 'Ξ',
   };
@@ -13,11 +13,11 @@ export const formatCurrency = (value, currencyCode = 'USD') => {
       style: 'currency',
       currency: currencyCode,
     }).format(value);
-  } catch (e) {
+  } catch {
     return `${currencyCode} ${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 };
 
-export const formatPercent = (value) => {
+export const formatPercent = (value: number): string => {
   return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
 };

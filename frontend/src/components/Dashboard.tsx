@@ -1,15 +1,25 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { DollarSign, ArrowUpRight, ArrowDownRight, Briefcase, TrendingUp } from 'lucide-react';
 import { formatCurrency, formatPercent } from '../utils/formatters';
+import { PortfolioPerformance, TaxSummary } from '../types';
 
 const COLORS = ['#6366f1', '#a855f7', '#f59e0b', '#10b981', '#ec4899'];
 
-export default function Dashboard({ performance, taxSummary, portfolioName }) {
-  const [mounted, setMounted] = React.useState(false);
+export default function Dashboard({ 
+  performance, 
+  taxSummary 
+}: { 
+  performance: PortfolioPerformance | null, 
+  taxSummary: TaxSummary | null 
+}) {
+  const [mounted, setMounted] = useState(false);
   
-  React.useEffect(() => {
-    setMounted(true);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setMounted(true);
+    }, 0);
+    return () => clearTimeout(timer);
   }, []);
 
   if (!performance || !taxSummary || performance.history.length === 0) {
@@ -26,12 +36,12 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
 
   const { metrics, history } = performance;
   const totalValue = metrics.portfolio_value;
-  const realizedPnl = metrics.realized_pnl;
-  const unrealizedPnl = metrics.unrealized_pnl;
+  const realizedPnl = metrics.realized_pnl || 0;
+  const unrealizedPnl = metrics.unrealized_pnl || 0;
   const totalGains = realizedPnl + unrealizedPnl;
   
   // Prepare allocation data
-  const allocationMap = {};
+  const allocationMap: Record<string, number> = {};
   taxSummary.assets.forEach(a => {
     const type = a.asset_type || 'STOCK';
     allocationMap[type] = (allocationMap[type] || 0) + a.market_value;
@@ -115,19 +125,19 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
                     tickLine={false} 
                     tickFormatter={(val) => `$${val}`}
                   />
-                  <Tooltip 
-                    contentStyle={{ 
-                      background: '#121929', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: '8px',
-                      color: 'var(--text-primary)'
-                    }}
-                    formatter={(value, name) => {
-                      if (name === 'value') return [formatCurrency(value, taxSummary?.currency || 'USD'), 'Portfolio Value'];
-                      if (name === 'twr') return [formatPercent(value), 'Time-Weighted Return'];
-                      return [value, name];
-                    }}
-                  />
+<Tooltip 
+                     contentStyle={{ 
+                       background: '#121929', 
+                       border: '1px solid var(--border-color)', 
+                       borderRadius: '8px',
+                       color: 'var(--text-primary)'
+                     }}
+                     formatter={(value: number | string | undefined, name: string | undefined) => {
+                       if (name === 'value') return [formatCurrency(value as number ?? 0, taxSummary?.currency || 'USD'), 'Portfolio Value'];
+                       if (name === 'twr') return [formatPercent(value as number ?? 0), 'Time-Weighted Return'];
+                       return [value ?? '', name ?? ''];
+                     }}
+                   />
                   <Area type="monotone" dataKey="value" stroke="var(--color-primary)" strokeWidth={2} fillOpacity={1} fill="url(#colorValue)" />
                 </AreaChart>
               </ResponsiveContainer>
@@ -155,14 +165,14 @@ export default function Dashboard({ performance, taxSummary, portfolioName }) {
                       <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                     ))}
                   </Pie>
-                  <Tooltip 
-                    contentStyle={{ 
-                      background: '#121929', 
-                      border: '1px solid var(--border-color)', 
-                      borderRadius: '8px'
-                    }}
-                    formatter={(value) => formatCurrency(value, taxSummary?.currency || 'USD')}
-                  />
+<Tooltip 
+                     contentStyle={{ 
+                       background: '#121929', 
+                       border: '1px solid var(--border-color)', 
+                       borderRadius: '8px'
+                     }}
+                     formatter={(value: number) => [formatCurrency(value, taxSummary?.currency || 'USD'), '']}
+                   />
                 </PieChart>
               </ResponsiveContainer>
             ) : (
