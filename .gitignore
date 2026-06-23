@@ -32,3 +32,20 @@ CACHEDIR.TAG
 *.njsproj
 *.sln
 *.sw?
+
+# Scala / SBT
+backend-scala/target/
+backend-scala/project/target/
+backend-scala/project/project/target/
+backend-scala/project/project/
+backend-scala/project/target*/
+backend-scala/project/target_*/
+backend-scala/target*/
+backend-scala/target_*/
+.metals/
+.bloop/
+*.class
+*.jar
+*.o
+*.h
+*.log

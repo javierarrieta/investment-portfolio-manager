@@ -1,0 +1,9 @@
+FROM ghcr.io/graalvm/native-image:latest
+
+WORKDIR /app
+
+RUN mkdir -p /data
+
+COPY native-image.properties /app/native-image.properties
+
+ENTRYPOINT ["native-image"]
