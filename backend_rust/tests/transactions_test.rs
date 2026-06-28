@@ -39,7 +39,7 @@ fn test_create_duplicate_asset_returns_400() {
     common::run_test(|| async {
         let pool = setup_db().await;
         let port_id = seed_portfolio(&pool, "Dup Test", "USD").await;
-        let asset_id = seed_asset(&pool, port_id, "AAPL", "Apple").await;
+        let _asset_id = seed_asset(&pool, port_id, "AAPL", "Apple").await;
         let rocket = build_rocket(pool);
         let client = Client::tracked(rocket).await.unwrap();
 
