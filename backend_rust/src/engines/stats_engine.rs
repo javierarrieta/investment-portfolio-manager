@@ -153,3 +153,81 @@ impl StatsEngine {
         }))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::currency_service::CurrencyService;
+
+    fn empty_asset() -> Asset {
+        Asset {
+            id: 1,
+            portfolio_id: 1,
+            symbol: "TEST".to_string(),
+            name: "Test".to_string(),
+            asset_type: "STOCK".to_string(),
+            sector: None,
+            currency: "USD".to_string(),
+        }
+    }
+
+    fn empty_tx() -> Transaction {
+        Transaction {
+            id: 1,
+            asset_id: 1,
+            r#type: "BUY".to_string(),
+            quantity: 100.0,
+            price: 50.0,
+            fee: 0.0,
+            date: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc),
+        }
+    }
+
+    #[tokio::test]
+    async fn test_empty_assets_returns_zeroed_metrics() {
+        let svc = CurrencyService::new();
+        let result = StatsEngine::calculate_portfolio_performance(
+            &SqlitePool::connect(":memory:").await.unwrap(),
+            &[],
+            &[],
+            "USD",
+            &svc,
+        ).await.unwrap();
+
+        let metrics = result.get("metrics").unwrap();
+        let vol = metrics.get("volatility").unwrap().as_f64().unwrap();
+        let sharpe = metrics.get("sharpe_ratio").unwrap().as_f64().unwrap();
+        let beta = metrics.get("beta").unwrap().as_f64().unwrap();
+        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
+        
+        assert!((vol - 0.0).abs() < f64::EPSILON);
+        assert!((sharpe - 0.0).abs() < f64::EPSILON);
+        assert!((beta - 1.0).abs() < f64::EPSILON);
+        assert!((value - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_with_data_but_no_prices_returns_zero_value() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (id INTEGER PRIMARY KEY, symbol TEXT, date TEXT, close_price REAL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let svc = CurrencyService::new();
+        let assets = vec![empty_asset()];
+        let txs = vec![empty_tx()];
+        
+        let result = StatsEngine::calculate_portfolio_performance(
+            &pool,
+            &assets,
+            &txs,
+            "USD",
+            &svc,
+        ).await.unwrap();
+
+        let metrics = result.get("metrics").unwrap();
+        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
+        // No historical prices in memory DB, so value should be 0
+        assert!((value - 0.0).abs() < f64::EPSILON);
+    }
+}
