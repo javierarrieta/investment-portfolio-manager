@@ -4,6 +4,153 @@ use crate::services::currency_service::CurrencyService;
 use chrono::{DateTime, Utc};
 use anyhow::Result;
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::services::currency_service::CurrencyService;
+    use chrono::Utc as ChronoUtc;
+
+    fn make_tx(id: i32, tx_type: &str, qty: f64, price: f64, fee: f64, date_str: &str) -> Transaction {
+        Transaction {
+            id,
+            asset_id: 1,
+            r#type: tx_type.to_string(),
+            quantity: qty,
+            price,
+            fee,
+            date: DateTime::parse_from_rfc3339(date_str).unwrap().with_timezone(&ChronoUtc),
+        }
+    }
+
+    async fn run_engine(transactions: &[Transaction], strategy: &str, threshold_days: i64) -> AssetTaxSummary {
+        let svc = CurrencyService::new();
+        TaxLotEngine::calculate_lots(
+            "TEST", "STOCK", transactions, 110.0, "USD", "USD", &svc, strategy, threshold_days,
+        ).await.unwrap()
+    }
+
+    #[tokio::test]
+    async fn test_fifo_matches_oldest_lot_first() {
+        let txs = vec![
+            make_tx(1, "BUY", 100.0, 100.0, 0.0, "2024-01-01T00:00:00Z"),
+            make_tx(2, "BUY", 100.0, 110.0, 0.0, "2024-06-01T00:00:00Z"),
+            make_tx(3, "SELL", 50.0, 120.0, 0.0, "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.tax_lots.len(), 2);
+        assert!((result.tax_lots[0].remaining_qty - 50.0).abs() < f64::EPSILON);
+        assert!((result.tax_lots[1].remaining_qty - 100.0).abs() < f64::EPSILON);
+        assert!((result.realized_pnl - 1000.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_lifo_matches_newest_lot_first() {
+        let txs = vec![
+            make_tx(1, "BUY", 100.0, 100.0, 0.0, "2024-01-01T00:00:00Z"),
+            make_tx(2, "BUY", 100.0, 110.0, 0.0, "2024-06-01T00:00:00Z"),
+            make_tx(3, "SELL", 50.0, 120.0, 0.0, "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "LIFO", 30).await;
+        assert_eq!(result.tax_lots.len(), 2);
+        assert!((result.tax_lots[0].remaining_qty - 100.0).abs() < f64::EPSILON);
+        assert!((result.tax_lots[1].remaining_qty - 50.0).abs() < f64::EPSILON);
+        assert!((result.realized_pnl - 500.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_sells_short_term_first() {
+        let txs = vec![
+            make_tx(1, "BUY", 100.0, 100.0, 0.0, "2024-01-01T00:00:00Z"),
+            make_tx(2, "BUY", 100.0, 110.0, 0.0, "2024-11-15T00:00:00Z"),
+            make_tx(3, "SELL", 100.0, 120.0, 0.0, "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "HYBRID", 30).await;
+        assert_eq!(result.tax_lots.len(), 1);
+        assert!((result.tax_lots[0].remaining_qty - 100.0).abs() < f64::EPSILON);
+        assert!((result.realized_pnl - 1000.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_sell_exceeds_total_buys() {
+        let txs = vec![
+            make_tx(1, "BUY", 50.0, 100.0, 0.0, "2024-01-01T00:00:00Z"),
+            make_tx(2, "SELL", 100.0, 120.0, 0.0, "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.tax_lots.len(), 0);
+        assert!((result.current_shares - 0.0).abs() < f64::EPSILON);
+        assert!((result.realized_pnl - 1000.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_sell_with_no_prior_buys_ignored() {
+        let txs = vec![
+            make_tx(1, "SELL", 50.0, 120.0, 0.0, "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.tax_lots.len(), 0);
+        assert!((result.realized_pnl - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_fee_increases_cost_basis() {
+        let txs_no_fee = vec![
+            make_tx(1, "BUY", 100.0, 100.0, 0.0, "2024-01-01T00:00:00Z"),
+        ];
+        let txs_with_fee = vec![
+            make_tx(1, "BUY", 100.0, 100.0, 50.0, "2024-01-01T00:00:00Z"),
+        ];
+        let r_no_fee = run_engine(&txs_no_fee, "FIFO", 30).await;
+        let r_with_fee = run_engine(&txs_with_fee, "FIFO", 30).await;
+        assert!((r_with_fee.average_cost - r_no_fee.average_cost - 0.5).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_empty_transactions_returns_zero() {
+        let result = run_engine(&[], "FIFO", 30).await;
+        assert!((result.current_shares - 0.0).abs() < f64::EPSILON);
+        assert!((result.total_cost - 0.0).abs() < f64::EPSILON);
+        assert!((result.market_value - 0.0).abs() < f64::EPSILON);
+        assert_eq!(result.tax_lots.len(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_single_buy_no_sells() {
+        let txs = vec![
+            make_tx(1, "BUY", 200.0, 50.0, 10.0, "2024-01-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.tax_lots.len(), 1);
+        assert!((result.average_cost - 50.05).abs() < f64::EPSILON);
+        assert!((result.market_value - 22000.0).abs() < f64::EPSILON);
+        assert!((result.unrealized_pnl - 11990.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_partial_sell_across_multiple_lots() {
+        let txs = vec![
+            make_tx(1, "BUY", 60.0, 100.0, 0.0, "2024-01-01T00:00:00Z"),
+            make_tx(2, "BUY", 40.0, 120.0, 0.0, "2024-06-01T00:00:00Z"),
+            make_tx(3, "SELL", 80.0, 130.0, 0.0, "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.tax_lots.len(), 1);
+        assert!((result.tax_lots[0].remaining_qty - 20.0).abs() < f64::EPSILON);
+        assert!((result.realized_pnl - 2000.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_multi_currency_conversion() {
+        let txs = vec![
+            make_tx(1, "BUY", 100.0, 100.0, 0.0, "2024-01-01T00:00:00Z"),
+            make_tx(2, "SELL", 50.0, 120.0, 0.0, "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.tax_lots.len(), 1);
+        assert!((result.current_shares - 50.0).abs() < f64::EPSILON);
+    }
+}
+
 pub struct TaxLotEngine;
 
 struct InternalLot {
