@@ -7,7 +7,10 @@
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "generate-types": "openapi-typescript docs/openapi/openapi.json --output src/types/api.d.ts"
   },
   "dependencies": {
     "lucide-react": "^1.21.0",
@@ -29,6 +32,14 @@
     "globals": "^17.6.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.61.1",
-    "vite": "^8.0.12"
+    "vite": "^8.0.12",
+    "vitest": "^1.6.0",
+    "jsdom": "^24.1.0",
+    "@testing-library/react": "^14.2.0",
+    "@testing-library/jest-dom": "^6.4.0",
+    "@testing-library/user-event": "^14.5.0",
+    "msw": "^2.4.0",
+    "@mswjs/http-middleware": "^0.10.0",
+    "openapi-typescript": "^6.7.0"
   }
 }
