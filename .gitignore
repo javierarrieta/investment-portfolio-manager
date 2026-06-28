@@ -12,6 +12,7 @@ node_modules
 dist
 dist-ssr
 *.local
+.vite/
 
 # Python
 __pycache__/
@@ -21,6 +22,10 @@ __pycache__/
 .pytest_cache/
 *.db
 CACHEDIR.TAG
+
+# Rust
+backend_rust/target/
+**/*.rs.bk
 
 # Editor and OS
 .vscode/*
