@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, Utc, DateTime, Datelike};
+use chrono::{NaiveDate, Utc, Datelike, TimeZone};
 use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction, HistoricalPrice};
 use crate::services::currency_service::CurrencyService;
@@ -8,6 +8,7 @@ use std::collections::HashMap;
 pub struct StatsEngine;
 
 impl StatsEngine {
+    #[allow(dead_code)]
     pub async fn sync_historical_prices(_pool: &SqlitePool, _symbols: &[String], _start_date: NaiveDate) -> Result<()> {
         // Implementation can be added here later using reqwest
         Ok(())
@@ -110,7 +111,7 @@ impl StatsEngine {
                 let mut final_price = price;
                 if asset.currency != base_currency {
                     // Simple date handling for currency service
-                    let date_utc = DateTime::<Utc>::from_utc(NaiveDate::from_ymd_opt(date.year(), date.month(), date.day()).unwrap().and_hms_opt(0,0,0).unwrap(), Utc);
+                    let date_utc = Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(date.year(), date.month(), date.day()).unwrap().and_hms_opt(0,0,0).unwrap());
                     let rate = currency_service.get_rate(&asset.currency, base_currency, date_utc).await.unwrap_or(1.0);
                     final_price *= rate;
                 }
@@ -157,6 +158,7 @@ impl StatsEngine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::DateTime;
     use crate::services::currency_service::CurrencyService;
 
     fn empty_asset() -> Asset {

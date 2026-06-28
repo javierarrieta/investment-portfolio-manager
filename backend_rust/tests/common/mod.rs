@@ -83,6 +83,7 @@ pub async fn seed_portfolio(pool: &SqlitePool, name: &str, currency: &str) -> i3
     res.0
 }
 
+#[allow(dead_code)]
 pub async fn seed_asset(pool: &SqlitePool, portfolio_id: i32, symbol: &str, name: &str) -> i32 {
     let res = sqlx::query_as::<_, (i32,)>(
         "INSERT INTO assets (portfolio_id, symbol, name, asset_type, currency) VALUES (?, ?, ?, ?, 'USD') RETURNING id"
@@ -97,6 +98,7 @@ pub async fn seed_asset(pool: &SqlitePool, portfolio_id: i32, symbol: &str, name
     res.0
 }
 
+#[allow(dead_code)]
 pub async fn seed_transaction(
     pool: &SqlitePool,
     asset_id: i32,

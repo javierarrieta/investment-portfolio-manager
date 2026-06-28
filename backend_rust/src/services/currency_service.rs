@@ -19,6 +19,7 @@ struct Chart {
 #[derive(Deserialize)]
 struct ChartResult {
     indicators: Indicators,
+    #[allow(dead_code)]
     timestamp: Vec<i64>,
 }
 
