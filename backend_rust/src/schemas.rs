@@ -113,6 +113,39 @@ mod tests {
     }
 
     #[test]
+    fn test_transaction_out_roundtrip() {
+        let tx = TransactionOut {
+            id: 42,
+            asset_id: 7,
+            r#type: "SELL".to_string(),
+            quantity: 25.0,
+            price: 200.0,
+            fee: 5.0,
+            date: sample_datetime(),
+        };
+        let json = serde_json::to_string(&tx).unwrap();
+        let deserialized: TransactionOut = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, 42);
+        assert_eq!(deserialized.asset_id, 7);
+        assert_eq!(deserialized.r#type, "SELL");
+    }
+
+    #[test]
+    fn test_asset_create_roundtrip() {
+        let a = AssetCreate {
+            symbol: "TSLA".to_string(),
+            name: "Tesla Inc".to_string(),
+            asset_type: "STOCK".to_string(),
+            sector: Some("Auto".to_string()),
+        };
+        let json = serde_json::to_string(&a).unwrap();
+        let deserialized: AssetCreate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.symbol, "TSLA");
+        assert_eq!(deserialized.asset_type, "STOCK");
+        assert_eq!(deserialized.sector, Some("Auto".to_string()));
+    }
+
+    #[test]
     fn test_portfolio_create_with_none_description() {
         let p = PortfolioCreate {
             name: "My Portfolio".to_string(),
