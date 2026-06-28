@@ -1,3 +1,8 @@
+/**
+ * @fileoverview TEST FIXTURE - PortfolioForm component used only in tests.
+ * This is a minimal implementation for demonstrating test patterns.
+ * Do not use in production.
+ */
 import React, { useState, useEffect } from 'react'
 import { Portfolio } from '../../types'
 
