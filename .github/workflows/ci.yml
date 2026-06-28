@@ -22,9 +22,8 @@ jobs:
 
       - name: Generate and Validate OpenAPI Spec
         run: |
-          # Create a dummy DB for the server to start
-          mkdir -p backend
-          touch backend/portfolio.db
+          # Create a dummy DB for the server to start at the expected path
+          touch portfolio.db
           
           # Run server in background and fetch spec
           cd backend_rust
