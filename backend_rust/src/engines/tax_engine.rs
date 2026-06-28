@@ -3,7 +3,6 @@ use crate::schemas::{TaxLot, AssetTaxSummary};
 use crate::services::currency_service::CurrencyService;
 use chrono::{DateTime, Utc};
 use anyhow::Result;
-use std::cmp::Ordering;
 
 pub struct TaxLotEngine;
 

@@ -2,7 +2,7 @@ use chrono::{NaiveDate, Utc, DateTime, Datelike};
 use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction, HistoricalPrice};
 use crate::services::currency_service::CurrencyService;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use std::collections::HashMap;
 
 pub struct StatsEngine;

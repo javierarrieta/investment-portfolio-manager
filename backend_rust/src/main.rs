@@ -11,11 +11,10 @@ mod api_routes {
     pub mod analytics;
 }
 
-use rocket::{State, serde::json::Json};
+use rocket::serde::json::Json;
 use sqlx::sqlite::SqlitePool;
 use crate::services::currency_service::CurrencyService;
 use utoipa::OpenApi;
-use utoipa_swagger_ui::SwaggerUi;
 use crate::openapi::ApiDoc;
 
 #[get("/")]

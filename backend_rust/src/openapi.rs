@@ -1,5 +1,4 @@
 use utoipa::OpenApi;
-use crate::api_routes::{portfolios, transactions, analytics};
 use crate::schemas;
 use crate::models;
 
