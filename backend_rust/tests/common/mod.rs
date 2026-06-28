@@ -1,19 +1,6 @@
+use chrono::{DateTime, Utc};
 use rocket::Rocket;
 use sqlx::sqlite::SqlitePool;
-use std::future::Future;
-
-pub fn run_test<F, Fut, R>(f: F) -> R
-where
-    F: FnOnce() -> Fut,
-    Fut: Future<Output = R>,
-{
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .unwrap()
-        .block_on(f())
-}
-use chrono::{DateTime, Utc};
 
 pub fn build_rocket(pool: SqlitePool) -> Rocket<rocket::Build> {
     use backend_rust::api_routes;
@@ -28,6 +15,8 @@ pub fn build_rocket(pool: SqlitePool) -> Rocket<rocket::Build> {
             api_routes::portfolios::list_portfolios,
             api_routes::portfolios::get_portfolio,
             api_routes::portfolios::delete_portfolio,
+            api_routes::analytics::get_portfolio_tax_summary,
+            api_routes::analytics::get_portfolio_performance,
         ])
         .mount("/api", rocket::routes![
             api_routes::transactions::create_asset,
@@ -35,10 +24,6 @@ pub fn build_rocket(pool: SqlitePool) -> Rocket<rocket::Build> {
             api_routes::transactions::create_transaction,
             api_routes::transactions::list_portfolio_transactions,
             api_routes::transactions::delete_transaction,
-        ])
-        .mount("/api/portfolios", rocket::routes![
-            api_routes::analytics::get_portfolio_tax_summary,
-            api_routes::analytics::get_portfolio_performance,
         ])
 }
 
