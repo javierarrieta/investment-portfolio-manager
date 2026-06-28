@@ -22,6 +22,10 @@ __pycache__/
 *.db
 CACHEDIR.TAG
 
+# Rust
+backend_rust/target/
+**/*.rs.bk
+
 # Editor and OS
 .vscode/*
 !.vscode/extensions.json
