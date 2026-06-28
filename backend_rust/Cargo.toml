@@ -2,6 +2,7 @@
 name = "backend_rust"
 version = "0.1.0"
 edition = "2024"
+default-run = "backend_rust"
 
 [dependencies]
 rocket = { version = "0.5", features = ["json"] }
