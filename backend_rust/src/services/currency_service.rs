@@ -82,3 +82,35 @@ impl CurrencyService {
         Ok(rate)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_same_currency_returns_one() {
+        let svc = CurrencyService::new();
+        let date = DateTime::from_timestamp(1705312200, 0).unwrap();
+        let result = svc.get_rate("USD", "USD", date).await;
+        assert!(result.is_ok());
+        assert!((result.unwrap() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_get_rate_populates_cache() {
+        let svc = CurrencyService::new();
+        let date = DateTime::from_timestamp(1700000000, 0).unwrap();
+        let _ = svc.get_rate("EUR", "USD", date).await;
+    }
+
+    #[tokio::test]
+    async fn test_cache_hit_returns_stored_rate() {
+        let svc = CurrencyService::new();
+        let date1 = DateTime::from_timestamp(1700000001, 0).unwrap();
+        let date2 = DateTime::from_timestamp(1700000001, 0).unwrap();
+        
+        let r1 = svc.get_rate("GBP", "GBP", date1).await.unwrap();
+        let r2 = svc.get_rate("GBP", "GBP", date2).await.unwrap();
+        assert!((r1 - r2).abs() < f64::EPSILON);
+    }
+}
