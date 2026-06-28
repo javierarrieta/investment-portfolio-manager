@@ -1,8 +1,9 @@
 use sqlx::FromRow;
 use chrono::{DateTime, Utc, NaiveDate};
 use serde::{Serialize, Deserialize};
+use utoipa::ToSchema;
 
-#[derive(Debug, FromRow, Serialize, Deserialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize, ToSchema)]
 pub struct Portfolio {
     pub id: i32,
     pub name: String,
@@ -11,7 +12,7 @@ pub struct Portfolio {
     pub base_currency: String,
 }
 
-#[derive(Debug, FromRow, Serialize, Deserialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize, ToSchema)]
 pub struct Asset {
     pub id: i32,
     pub portfolio_id: i32,
@@ -22,7 +23,7 @@ pub struct Asset {
     pub currency: String,
 }
 
-#[derive(Debug, Clone, FromRow, Serialize, Deserialize)]
+#[derive(Debug, Clone, FromRow, Serialize, Deserialize, ToSchema)]
 pub struct Transaction {
     pub id: i32,
     pub asset_id: i32,
@@ -33,7 +34,7 @@ pub struct Transaction {
     pub date: DateTime<Utc>,
 }
 
-#[derive(Debug, FromRow, Serialize, Deserialize)]
+#[derive(Debug, FromRow, Serialize, Deserialize, ToSchema)]
 pub struct HistoricalPrice {
     pub symbol: String,
     pub date: NaiveDate,

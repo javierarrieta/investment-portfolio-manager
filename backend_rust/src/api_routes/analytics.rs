@@ -6,6 +6,14 @@ use crate::engines::tax_engine::TaxLotEngine;
 use crate::engines::stats_engine::StatsEngine;
 use anyhow::Result;
 
+#[utoipa::path(
+    get,
+    path = "/api/portfolios/<id>/tax-summary",
+    responses(
+        (status = 200, description = "Tax summary retrieved", body = serde_json::Value),
+        (status = 404, description = "Portfolio not found")
+    )
+)]
 #[get("/<id>/tax-summary?<strategy>&<threshold_days>")]
 pub async fn get_portfolio_tax_summary(
     id: i32,
@@ -82,6 +90,14 @@ pub async fn get_portfolio_tax_summary(
     })))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/portfolios/<id>/performance",
+    responses(
+        (status = 200, description = "Performance data retrieved", body = serde_json::Value),
+        (status = 404, description = "Portfolio not found")
+    )
+)]
 #[get("/<id>/performance")]
 pub async fn get_portfolio_performance(
     id: i32,

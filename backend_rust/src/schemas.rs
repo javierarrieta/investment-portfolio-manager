@@ -1,8 +1,9 @@
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
+use utoipa::ToSchema;
 
 // --- Transaction ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TransactionCreate {
     pub r#type: String,
     pub quantity: f64,
@@ -11,7 +12,7 @@ pub struct TransactionCreate {
     pub date: DateTime<Utc>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TransactionOut {
     pub id: i32,
     pub asset_id: i32,
@@ -23,7 +24,7 @@ pub struct TransactionOut {
 }
 
 // --- Asset ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AssetCreate {
     pub symbol: String,
     pub name: String,
@@ -31,7 +32,7 @@ pub struct AssetCreate {
     pub sector: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AssetOut {
     pub id: i32,
     pub portfolio_id: i32,
@@ -43,14 +44,14 @@ pub struct AssetOut {
 }
 
 // --- Portfolio ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PortfolioCreate {
     pub name: String,
     pub description: Option<String>,
     pub currency: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct PortfolioOut {
     pub id: i32,
     pub name: String,
@@ -60,7 +61,7 @@ pub struct PortfolioOut {
 }
 
 // --- Tax Lot Out ---
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TaxLot {
     pub buy_date: DateTime<Utc>,
     pub buy_price: f64,
@@ -70,7 +71,7 @@ pub struct TaxLot {
     pub latent_roi: f64,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AssetTaxSummary {
     pub symbol: String,
     pub asset_type: String,

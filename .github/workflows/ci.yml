@@ -1,0 +1,37 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run Tests
+        run: |
+          cd backend_rust
+          cargo test
+
+      - name: Generate and Validate OpenAPI Spec
+        run: |
+          # Create a dummy DB for the server to start
+          mkdir -p backend
+          touch backend/portfolio.db
+          
+          # Run server in background and fetch spec
+          cd backend_rust
+          cargo run --bin backend_rust &
+          sleep 10
+          curl http://127.0.0.1:8000/api-docs/openapi.json > current_openapi.json
+          kill $(jobs -p)
+          
+          # Compare with the committed spec
+          diff current_openapi.json ../docs/openapi/openapi.json || (echo "OpenAPI spec has changed! Please update docs/openapi/openapi.json" && exit 1)

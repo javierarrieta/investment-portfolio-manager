@@ -4,7 +4,8 @@ mod models;
 mod schemas;
 mod services;
 mod engines;
-mod routes {
+mod openapi;
+mod api_routes {
     pub mod portfolios;
     pub mod transactions;
     pub mod analytics;
@@ -13,6 +14,9 @@ mod routes {
 use rocket::{State, serde::json::Json};
 use sqlx::sqlite::SqlitePool;
 use crate::services::currency_service::CurrencyService;
+use utoipa::OpenApi;
+use utoipa_swagger_ui::SwaggerUi;
+use crate::openapi::ApiDoc;
 
 #[get("/")]
 fn index() -> &'static str {
@@ -21,7 +25,7 @@ fn index() -> &'static str {
 
 #[launch]
 async fn rocket() -> _ {
-    let database_url = "sqlite:/home/coder/investment-portfolio-manager/backend/portfolio.db";
+    let database_url = "sqlite:/home/coder/investment-portfolio-manager/portfolio.db";
     
     let pool = SqlitePool::connect(database_url)
         .await
@@ -34,20 +38,26 @@ async fn rocket() -> _ {
         .manage(currency_service)
         .mount("/", routes![index])
         .mount("/api/portfolios", routes![
-            routes::portfolios::create_portfolio,
-            routes::portfolios::list_portfolios,
-            routes::portfolios::get_portfolio,
-            routes::portfolios::delete_portfolio
+            api_routes::portfolios::create_portfolio,
+            api_routes::portfolios::list_portfolios,
+            api_routes::portfolios::get_portfolio,
+            api_routes::portfolios::delete_portfolio
         ])
         .mount("/api", routes![
-            routes::transactions::create_asset,
-            routes::transactions::delete_asset,
-            routes::transactions::create_transaction,
-            routes::transactions::list_portfolio_transactions,
-            routes::transactions::delete_transaction
+            api_routes::transactions::create_asset,
+            api_routes::transactions::delete_asset,
+            api_routes::transactions::create_transaction,
+            api_routes::transactions::list_portfolio_transactions,
+            api_routes::transactions::delete_transaction
         ])
         .mount("/api/portfolios", routes![
-            routes::analytics::get_portfolio_tax_summary,
-            routes::analytics::get_portfolio_performance
+            api_routes::analytics::get_portfolio_tax_summary,
+            api_routes::analytics::get_portfolio_performance
         ])
+        .mount("/api-docs", routes![openapi_json])
+}
+
+#[get("/openapi.json")]
+fn openapi_json() -> Json<serde_json::Value> {
+    Json(serde_json::to_value(ApiDoc::openapi()).unwrap())
 }

@@ -3,6 +3,15 @@ use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction};
 use crate::schemas::{AssetCreate, AssetOut, TransactionCreate, TransactionOut};
 
+#[utoipa::path(
+    post,
+    path = "/api/portfolios/<portfolio_id>/assets",
+    responses(
+        (status = 201, description = "Asset created", body = AssetOut),
+        (status = 400, description = "Asset already exists"),
+        (status = 404, description = "Portfolio not found")
+    )
+)]
 #[post("/portfolios/<portfolio_id>/assets", data = "<asset>")]
 pub async fn create_asset(
     portfolio_id: i32,
@@ -46,6 +55,14 @@ pub async fn create_asset(
     }))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/assets/<id>",
+    responses(
+        (status = 204, description = "Asset deleted"),
+        (status = 404, description = "Asset not found")
+    )
+)]
 #[delete("/assets/<id>")]
 pub async fn delete_asset(id: i32, pool: &State<SqlitePool>) -> Result<Status, Status> {
     let res = sqlx::query("DELETE FROM assets WHERE id = ?")
@@ -61,6 +78,14 @@ pub async fn delete_asset(id: i32, pool: &State<SqlitePool>) -> Result<Status, S
     Ok(Status::NoContent)
 }
 
+#[utoipa::path(
+    post,
+    path = "/api/portfolios/<portfolio_id>/assets/<asset_id>/transactions",
+    responses(
+        (status = 201, description = "Transaction created", body = TransactionOut),
+        (status = 404, description = "Asset not found")
+    )
+)]
 #[post("/portfolios/<portfolio_id>/assets/<asset_id>/transactions", data = "<tx>")]
 pub async fn create_transaction(
     portfolio_id: i32,
@@ -104,6 +129,14 @@ pub async fn create_transaction(
     }))
 }
 
+#[utoipa::path(
+    get,
+    path = "/api/portfolios/<portfolio_id>/transactions",
+    responses(
+        (status = 200, description = "List of transactions", body = [TransactionOut]),
+        (status = 404, description = "Portfolio not found")
+    )
+)]
 #[get("/portfolios/<portfolio_id>/transactions")]
 pub async fn list_portfolio_transactions(portfolio_id: i32, pool: &State<SqlitePool>) -> Result<Json<Vec<TransactionOut>>, Status> {
     let assets = sqlx::query_as::<_, (i32,)>("SELECT id FROM assets WHERE portfolio_id = ?")
@@ -148,6 +181,14 @@ pub async fn list_portfolio_transactions(portfolio_id: i32, pool: &State<SqliteP
     Ok(Json(out))
 }
 
+#[utoipa::path(
+    delete,
+    path = "/api/transactions/<id>",
+    responses(
+        (status = 204, description = "Transaction deleted"),
+        (status = 404, description = "Transaction not found")
+    )
+)]
 #[delete("/transactions/<id>")]
 pub async fn delete_transaction(id: i32, pool: &State<SqlitePool>) -> Result<Status, Status> {
     let res = sqlx::query("DELETE FROM transactions WHERE id = ?")
