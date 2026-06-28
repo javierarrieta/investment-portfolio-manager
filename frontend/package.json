@@ -9,7 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "generate-types": "openapi-typescript ../docs/openapi/openapi.json --output src/types/api.d.ts"
   },
   "dependencies": {
     "lucide-react": "^1.21.0",
