@@ -78,5 +78,8 @@ export const handlers = [
       transactions: []
     }
     return HttpResponse.json(mockAsset)
+  }),
+  http.all('*', () => {
+    return HttpResponse.json({ error: 'not implemented' }, { status: 501 })
   })
 ]

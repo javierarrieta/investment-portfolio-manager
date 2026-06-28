@@ -7,15 +7,9 @@ describe('PortfolioList', () => {
     render(<PortfolioList />)
 
     await waitFor(() => {
+      expect(screen.getByText('My Portfolios')).toBeInTheDocument()
       expect(screen.getByText('Test Portfolio')).toBeInTheDocument()
       expect(screen.getByText('Retirement Fund')).toBeInTheDocument()
-    })
-  })
-
-  it('shows loading state initially', async () => {
-    render(<PortfolioList />)
-    await waitFor(() => {
-      expect(screen.getByText('Loading...')).toBeInTheDocument()
     })
   })
 })

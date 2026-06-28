@@ -11,6 +11,8 @@ describe('PortfolioForm', () => {
     await user.type(screen.getByLabelText(/name/i), 'New Portfolio')
     await user.type(screen.getByLabelText(/description/i), 'A new portfolio')
 
+    await user.click(screen.getByRole('button', { name: 'Create' }))
+
     await waitFor(() => {
       expect(screen.getByText('Portfolio created!')).toBeInTheDocument()
     })

@@ -35,12 +35,6 @@ export default function PortfolioForm({ onSuccess }: PortfolioFormProps) {
     }
   }
 
-  useEffect(() => {
-    if (name && description && !submitted && !submitting) {
-      handleSubmit()
-    }
-  }, [name, description, submitted, submitting])
-
   if (submitted) {
     return <div>Portfolio created!</div>
   }

@@ -23,9 +23,10 @@ describe('MSW Test Setup', () => {
   })
 
   it('should intercept POST /api/portfolios', async () => {
+    server.resetHandlers()
     server.use(
       http.post('/api/portfolios', async ({ request }) => {
-        const body = (await request.json()) as Partial<Portfolio>
+        const body = (await request.json()) as { name?: string; description?: string; currency?: string }
         const result: Portfolio = {
           id: 99,
           name: body.name || '',
@@ -37,16 +38,20 @@ describe('MSW Test Setup', () => {
       })
     )
 
-    const res = await fetch('/api/portfolios', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'New Portfolio', currency: 'EUR' })
-    })
-    const data = await res.json() as Portfolio
+    try {
+      const res = await fetch('/api/portfolios', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'New Portfolio', currency: 'EUR' })
+      })
+      const data = await res.json() as Portfolio
 
-    expect(res.status).toBe(201)
-    expect(data.id).toBe(99)
-    expect(data.name).toBe('New Portfolio')
+      expect(res.status).toBe(201)
+      expect(data.id).toBe(99)
+      expect(data.name).toBe('New Portfolio')
+    } finally {
+      server.resetHandlers()
+    }
   })
 
   it('should intercept GET /api/assets/:id', async () => {
