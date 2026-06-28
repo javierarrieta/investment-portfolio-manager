@@ -7,11 +7,10 @@ echo "================================================"
 echo "🚀 Starting Investment Portfolio Manager..."
 echo "================================================"
 
-# 1. Start Backend FastAPI
+# 1. Start Backend Rust
 echo "⚙️  Starting Backend API on http://127.0.0.1:8000..."
-source backend/.venv/bin/activate
-cd backend
-uvicorn app.main:app --host 127.0.0.1 --port 8000 &
+cd backend_rust
+/home/coder/.cargo/bin/cargo run &
 BACKEND_PID=$!
 cd ..
 
@@ -28,7 +27,7 @@ cd ..
 echo "================================================"
 echo "✨ Both servers are running!"
 echo "👉 Web App: http://localhost:5173"
-echo "👉 API Docs: http://127.0.0.1:8000/docs"
+echo "👉 API: http://127.0.0.1:8000"
 echo "Press CTRL+C to stop both servers."
 echo "================================================"
 

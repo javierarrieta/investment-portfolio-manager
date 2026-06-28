@@ -1,19 +1,19 @@
 # Walkthrough: Investment Portfolio Manager
 
-We have successfully built and verified the full-stack **Investment Portfolio Manager**. The application is structured with a separate Python (FastAPI) backend and a React (Vite + Vanilla CSS) frontend.
+We have successfully built and verified the full-stack **Investment Portfolio Manager**. The application is structured with a separate Rust (Rocket) backend and a React (Vite + Vanilla CSS) frontend.
 
 ---
 
 ## 🛠️ What Was Built
 
-### 1. Backend Service (FastAPI)
-- **Database Schema**: Utilizes SQLite via SQLAlchemy. The database caches daily price bars (`HistoricalPrice` table) for offline capabilities and rapid computations.
-- **Tax Lot Accounting Engine (`tax_engine.py`)**:
+### 1. Backend Service (Rust + Rocket)
+- **Database Schema**: Utilizes SQLite via SQLx. The database caches daily price bars (`HistoricalPrice` table) for offline capabilities and rapid computations.
+- **Tax Lot Accounting Engine (`tax_engine.rs`)**:
   - Implements **FIFO** (First-In, First-Out) matching.
   - Implements **LIFO** (Last-In, First-Out) matching.
   - Implements a **Hybrid** method (applies LIFO matching on lots bought within a configurable window, e.g., 30 days, to shield short-term lots, falling back to FIFO for older lots).
   - Returns realized gains/losses, remaining open tax lots, and cost basis.
-- **Advanced Metrics Engine (`stats_engine.py`)**:
+- **Advanced Metrics Engine (`stats_engine.rs`)**:
   - Computes historical daily portfolio values.
   - Calculates daily returns and cumulative **Time-Weighted Return (TWR)** to accurately track performance independently of capital additions/withdrawals.
   - Computes **Annualized Volatility** and **Sharpe Ratio** (using a 2% risk-free rate).
@@ -33,8 +33,8 @@ We have successfully built and verified the full-stack **Investment Portfolio Ma
 ## 🧪 Verification & Validation Results
 
 ### 1. Automated Unit Tests
-We verified the tax lot engine algorithms using pytest:
-`PYTHONPATH=backend pytest backend/tests/test_tax_engine.py`
+We verified the tax lot engine algorithms using cargo test:
+`cargo test` (run from `backend_rust/`)
 
 - **FIFO Matching**: Validated correct lot division, fractional share parsing, unit fee inclusions, and realized gains.
 - **LIFO Matching**: Verified newest shares match first.
@@ -84,9 +84,9 @@ To run both backend and frontend servers concurrently, a unified startup script 
 
 Both servers will start up concurrently:
 - **Web App**: Accessible at [http://localhost:5173](http://localhost:5173)
-- **API Documentation**: Accessible at [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- **API**: Accessible at [http://127.0.0.1:8000](http://127.0.0.1:8000)
 
 To stop both servers, simply press `CTRL+C` in your terminal.
 
 > [!TIP]
-> **macOS Localhost Fix**: We explicitly configured the React frontend to communicate with `http://127.0.0.1:8000` instead of `localhost:8000`. This prevents connection drops on macOS caused by `localhost` resolving to IPv6 `::1` while the local FastAPI server binds to IPv4.
+> **macOS Localhost Fix**: We explicitly configured the React frontend to communicate with `http://127.0.0.1:8000` instead of `localhost:8000`. This prevents connection drops on macOS caused by `localhost` resolving to IPv6 `::1` while the local Rust server binds to IPv4.

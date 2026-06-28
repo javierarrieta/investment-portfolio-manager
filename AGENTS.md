@@ -4,7 +4,7 @@
 Investment Portfolio Manager: Full-stack app for portfolio management and tax lot (FIFO/LIFO/Hybrid) calculations.
 
 ## Architecture
-- **Backend**: FastAPI in `backend/`. Uses SQLite (`backend/portfolio.db`) via SQLAlchemy. Dependencies are managed in `backend/.venv/`.
+- **Backend**: Rust (Rocket) in `backend_rust/`. Uses SQLite (`backend/portfolio.db`) via SQLx.
 - **Frontend**: React + Vite in `frontend/`.
 
 ## Commands
@@ -15,9 +15,9 @@ From root:
 ./start.sh
 ```
 
-### Backend (requires `backend/.venv` activation)
-- **Start API**: `uvicorn app.main:app --host 127.0.0.1 --port 8000` (run from `backend/`)
-- **Test**: `PYTHONPATH=backend pytest backend/tests/test_tax_engine.py` (run from root)
+### Backend
+- **Start API**: `cargo run` (run from `backend_rust/`)
+- **Test**: `cargo test` (run from `backend_rust/`)
 
 ### Frontend
 - **Dev Server**: `npm run dev` (run from `frontend/`)
@@ -25,9 +25,9 @@ From root:
 
 ## Key Context
 - **API Prefix**: All routes are under `/api`.
-- **Tax Logic**: `backend/app/tax_engine.py` contains the core `TaxLotEngine` supporting `FIFO`, `LIFO`, and `HYBRID` (using `hybrid_threshold_days`) strategies.
+- **Tax Logic**: `backend_rust/src/engines/tax_engine.rs` contains the core `TaxLotEngine` supporting `FIFO`, `LIFO`, and `HYBRID` (using `hybrid_threshold_days`) strategies.
 - **Database**: Persistent storage is in `backend/portfolio.db`.
-- **Metrics Engine**: `backend/app/stats_engine.py` computes TWR, Volatility, Sharpe Ratio, and Portfolio Beta (vs SPY).
+- **Metrics Engine**: `backend_rust/src/engines/stats_engine.rs` computes TWR, Volatility, Sharpe Ratio, and Portfolio Beta (vs SPY).
 - **macOS Tip**: Use `127.0.0.1` instead of `localhost` for the API to avoid IPv6 resolution issues.
 
 ## Roadmap / Current Focus

@@ -28,19 +28,17 @@ Please verify the proposed currency conversion approach:
 #### [MODIFY] [models.py](file:///Users/javier/code/investment-portfolios/backend/app/models.py)
 - Add `currency` column to the `Asset` model (String, defaults to `"USD"`).
 
-#### [MODIFY] [main.py](file:///Users/javier/code/investment-portfolios/backend/app/main.py)
-- Import `text` from SQLAlchemy.
+#### [MODIFY] [main.rs](file:///Users/javier/code/investment-portfolios/backend_rust/src/main.rs)
 - Run a migration check on startup: if `currency` column is missing in `assets`, execute `ALTER TABLE assets ADD COLUMN currency VARCHAR DEFAULT 'USD'` to upgrade the SQLite schema without wiping data.
 
-#### [MODIFY] [routes/analytics.py](file:///Users/javier/code/investment-portfolios/backend/app/routes/analytics.py)
-- Fix bug: Import `pandas as pd` globally at the top of the file to resolve the `'pd' is not defined` error when fetching ticker price fallback data.
+#### [MODIFY] [analytics.rs](file:///Users/javier/code/investment-portfolios/backend_rust/src/routes/analytics.rs)
 - Integrate exchange rate lookups: When calculating tax lots and metrics, check if `asset.currency != portfolio.currency`. If so, fetch the corresponding exchange rate (e.g., `EURUSD=X` or `USDEUR=X`) from Yahoo Finance for the required dates.
 
-#### [MODIFY] [tax_engine.py](file:///Users/javier/code/investment-portfolios/backend/app/tax_engine.py)
+#### [MODIFY] [tax_engine.rs](file:///Users/javier/code/investment-portfolios/backend_rust/src/engines/tax_engine.rs)
 - Accept exchange rate conversion tables.
 - Convert transaction prices to the portfolio base currency during matching to compute realized tax gains/losses.
 
-#### [MODIFY] [stats_engine.py](file:///Users/javier/code/investment-portfolios/backend/app/stats_engine.py)
+#### [MODIFY] [stats_engine.rs](file:///Users/javier/code/investment-portfolios/backend_rust/src/engines/stats_engine.rs)
 - Sync historical daily prices for exchange rates (e.g., `USDEUR=X`) alongside asset tickers.
 - Convert daily asset market values to the portfolio base currency before summing the daily portfolio net value.
 
@@ -61,7 +59,7 @@ Please verify the proposed currency conversion approach:
 ## Verification Plan
 
 ### Automated Tests
-- Extend the unit tests in `backend/tests/test_tax_engine.py` to mock multi-currency transactions (e.g., buying in EUR, selling in EUR, inside a USD base portfolio) and verify the converted cost basis and realized profit math.
+- Extend the unit tests in `backend_rust/src/tests/` to mock multi-currency transactions (e.g., buying in EUR, selling in EUR, inside a USD base portfolio) and verify the converted cost basis and realized profit math.
 
 ### Manual Verification
 1. Open the UI, create a new portfolio in **EUR** base currency.
