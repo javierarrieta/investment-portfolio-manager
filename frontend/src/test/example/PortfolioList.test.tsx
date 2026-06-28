@@ -12,8 +12,10 @@ describe('PortfolioList', () => {
     })
   })
 
-  it('shows loading state initially', () => {
+  it('shows loading state initially', async () => {
     render(<PortfolioList />)
-    expect(screen.getByText('Loading...')).toBeInTheDocument()
+    await waitFor(() => {
+      expect(screen.getByText('Loading...')).toBeInTheDocument()
+    })
   })
 })
