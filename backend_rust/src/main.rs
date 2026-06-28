@@ -24,9 +24,10 @@ fn index() -> &'static str {
 
 #[launch]
 async fn rocket() -> _ {
-    let database_url = "sqlite:/home/coder/investment-portfolio-manager/portfolio.db";
+    let database_url = std::env::var("DATABASE_URL")
+        .unwrap_or_else(|_| "sqlite:../portfolio.db?mode=rwc".to_string());
     
-    let pool = SqlitePool::connect(database_url)
+    let pool = SqlitePool::connect(&database_url)
         .await
         .expect("Failed to connect to database");
 
