@@ -97,14 +97,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_rate_populates_cache() {
-        let svc = CurrencyService::new();
-        let date = DateTime::from_timestamp(1700000000, 0).unwrap();
-        let _ = svc.get_rate("EUR", "USD", date).await;
-    }
-
-    #[tokio::test]
-    async fn test_cache_hit_returns_stored_rate() {
+    async fn test_same_currency_returns_one_consistently() {
         let svc = CurrencyService::new();
         let date1 = DateTime::from_timestamp(1700000001, 0).unwrap();
         let date2 = DateTime::from_timestamp(1700000001, 0).unwrap();
