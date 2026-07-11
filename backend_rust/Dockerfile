@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # --- Stage 1: Build ---
-FROM rust:1.82-bookworm-slim AS builder
+FROM rust:1.92-slim AS builder
 
 # Install SQLite dev headers required by sqlx at compile time
 RUN apt-get update && apt-get install -y --no-install-recommends \
