@@ -40,8 +40,8 @@ VOLUME /app/data
 ENV DATABASE_URL=sqlite:///app/data/portfolio.db?mode=rwc
 
 RUN useradd -r -s /bin/false app
-USER app
 RUN mkdir -p /app/data && chown app:app /app/data
+USER app
 
 EXPOSE 8000
 
