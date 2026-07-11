@@ -15,8 +15,10 @@ jobs:
       matrix:
         include:
           - service: backend-rust
+            context: backend_rust
             dockerfile: backend_rust/Dockerfile
           - service: frontend
+            context: frontend
             dockerfile: frontend/Dockerfile
 
     steps:
@@ -40,7 +42,7 @@ jobs:
       - name: Build and push ${{ matrix.service }}
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ${{ matrix.context }}
           file: ${{ matrix.dockerfile }}
           push: true
           tags: |
