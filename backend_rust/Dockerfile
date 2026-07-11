@@ -22,7 +22,7 @@ RUN cargo build --release --bin backend_rust
 FROM debian:bookworm-slim AS runtime
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libsqlite3-2 \
+    libsqlite3-0 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -38,6 +38,11 @@ VOLUME /app/data
 # When run with: docker run -v $(pwd)/portfolio.db:/app/data/portfolio.db ...
 # we set DATABASE_URL so the path is correct.
 ENV DATABASE_URL=sqlite:///app/data/portfolio.db?mode=rwc
+
+RUN useradd -r -s /bin/false app
+USER app
+RUN mkdir -p /app/data && chown app:app /app/data
+
 EXPOSE 8000
 
 ENTRYPOINT ["./backend_rust"]
