@@ -1,0 +1,96 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app
+  namespace: investment-portfolio-manager
+  labels:
+    app: investment-portfolio-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: investment-portfolio-manager
+  template:
+    metadata:
+      labels:
+        app: investment-portfolio-manager
+    spec:
+      initContainers:
+        - name: wait-for-backend
+          image: busybox:1.36
+          command:
+            - sh
+            - -c
+            - |
+              for i in $(seq 1 30); do
+                if curl -sf http://127.0.0.1:8000/ > /dev/null 2>&1; then
+                  echo "Backend is ready"
+                  exit 0
+                fi
+                echo "Waiting for backend... ($i)"
+                sleep 2
+              done
+              echo "Backend did not become ready in time"
+              exit 1
+      containers:
+        - name: frontend
+          image: ghcr.io/<org>/investment-portfolio-manager/frontend:latest
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 3
+            periodSeconds: 5
+        - name: backend
+          image: ghcr.io/<org>/investment-portfolio-manager/backend:latest
+          ports:
+            - containerPort: 8000
+              name: http
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: RUST_LOG
+              value: "info"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 5
+          volumeMounts:
+            - name: database
+              mountPath: /app/data
+      volumes:
+        - name: database
+          persistentVolumeClaim:
+            claimName: postgresql-db-pvc

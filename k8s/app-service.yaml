@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: app-service
+  namespace: investment-portfolio-manager
+  labels:
+    app: investment-portfolio-manager
+spec:
+  type: ClusterIP
+  selector:
+    app: investment-portfolio-manager
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
