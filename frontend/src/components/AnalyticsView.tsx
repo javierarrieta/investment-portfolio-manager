@@ -22,7 +22,8 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
   };
 
   const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(val);
+    const code = currency && currency.length > 0 ? currency : 'USD';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(val);
   };
 
   // Get color for correlation cells
