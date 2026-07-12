@@ -30,5 +30,15 @@ From root:
 - **Metrics Engine**: `backend_rust/src/engines/stats_engine.rs` computes TWR, Volatility, Sharpe Ratio, and Portfolio Beta (vs SPY).
 - **macOS Tip**: Use `127.0.0.1` instead of `localhost` for the API to avoid IPv6 resolution issues.
 
+## Branching Workflow
+
+- **Always create a new branch** for each feature, fix, or change. Never work on `main`.
+- Name branches descriptively using the `type/scope` convention:
+  - `feat/...` — new features or functionality
+  - `fix/...` — bug fixes
+  - `chore/...` — configuration, tooling, docs
+  - `refactor/...` — code refactoring with no behavior change
+- After finishing work, commit your changes. The user will create the PR and merge manually.
+
 ## Roadmap / Current Focus
 - **Multi-Currency Support**: Implementing asset currency tracking and exchange rate conversion for tax and stats (see `docs/implementation_plan.md`).
