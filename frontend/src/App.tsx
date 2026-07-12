@@ -386,7 +386,7 @@ export default function App() {
             )}
 
             {activeTab === 'analytics' && (
-              <AnalyticsView performance={performance} />
+              <AnalyticsView performance={performance} currency={currentPortfolio?.currency || 'USD'} />
             )}
 
             {activeTab === 'ledger' && (
