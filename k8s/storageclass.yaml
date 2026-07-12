@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: StorageClass
+metadata:
+  name: nfs-client
+  namespace: investment-portfolio-manager
+provisioner: k8s.io/minikube-hostpath
+parameters:
+  type: hostpath-pvc
+reclaimPolicy: Retain
+volumeBindingMode: Immediate

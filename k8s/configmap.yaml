@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: investment-portfolio-manager
+data:
+  DATABASE_URL: "sqlite:///app/data/portfolio.db?mode=rwc"
