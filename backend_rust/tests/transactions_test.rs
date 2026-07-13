@@ -16,7 +16,8 @@ async fn test_create_asset() {
         "symbol": "AAPL",
         "name": "Apple Inc",
         "asset_type": "STOCK",
-        "sector": "Technology"
+        "sector": "Technology",
+        "currency": "USD"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -44,7 +45,8 @@ async fn test_create_duplicate_asset_returns_400() {
         "symbol": "AAPL",
         "name": "Apple Inc",
         "asset_type": "STOCK",
-        "sector": null
+        "sector": null,
+        "currency": "USD"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))

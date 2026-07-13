@@ -82,6 +82,31 @@ impl CurrencyService {
 
         Ok(rate)
     }
+
+    pub fn detect_currency(symbol: &str) -> String {
+        let upper = symbol.to_uppercase();
+        if upper.ends_with(".DE") || upper.ends_with(".F") || upper.ends_with(".FR") {
+            "EUR".to_string()
+        } else if upper.ends_with(".L") {
+            "GBP".to_string()
+        } else if upper.ends_with(".T") {
+            "JPY".to_string()
+        } else if upper.ends_with(".HK") {
+            "HKD".to_string()
+        } else if upper.ends_with(".SX") || upper.ends_with(".SW") {
+            "CHF".to_string()
+        } else if upper.ends_with(".TO") {
+            "CAD".to_string()
+        } else if upper.ends_with(".AX") {
+            "AUD".to_string()
+        } else if upper.ends_with(".K") {
+            "KRW".to_string()
+        } else if upper.contains("USD") || upper.contains("BTC") || upper.contains("ETH") {
+            "USD".to_string()
+        } else {
+            "USD".to_string()
+        }
+    }
 }
 
 #[cfg(test)]
@@ -106,5 +131,39 @@ mod tests {
         let r1 = svc.get_rate("GBP", "GBP", date1).await.unwrap();
         let r2 = svc.get_rate("GBP", "GBP", date2).await.unwrap();
         assert!((r1 - r2).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_detect_currency_german_stock() {
+        assert_eq!(CurrencyService::detect_currency("SAP.DE"), "EUR");
+        assert_eq!(CurrencyService::detect_currency("SIE.DE"), "EUR");
+    }
+
+    #[test]
+    fn test_detect_currency_uk_stock() {
+        assert_eq!(CurrencyService::detect_currency("SHEL.L"), "GBP");
+        assert_eq!(CurrencyService::detect_currency("BP.L"), "GBP");
+    }
+
+    #[test]
+    fn test_detect_currency_japanese_stock() {
+        assert_eq!(CurrencyService::detect_currency("7203.T"), "JPY");
+    }
+
+    #[test]
+    fn test_detect_currency_btc() {
+        assert_eq!(CurrencyService::detect_currency("BTC-USD"), "USD");
+    }
+
+    #[test]
+    fn test_detect_currency_us_stock() {
+        assert_eq!(CurrencyService::detect_currency("AAPL"), "USD");
+        assert_eq!(CurrencyService::detect_currency("MSFT"), "USD");
+    }
+
+    #[test]
+    fn test_detect_currency_case_insensitive() {
+        assert_eq!(CurrencyService::detect_currency("sap.de"), "EUR");
+        assert_eq!(CurrencyService::detect_currency("shel.l"), "GBP");
     }
 }

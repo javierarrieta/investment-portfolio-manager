@@ -41,10 +41,12 @@ async fn rocket() -> _ {
             api_routes::portfolios::create_portfolio,
             api_routes::portfolios::list_portfolios,
             api_routes::portfolios::get_portfolio,
-            api_routes::portfolios::delete_portfolio
+            api_routes::portfolios::delete_portfolio,
+            api_routes::portfolios::update_portfolio
         ])
         .mount("/api", routes![
             api_routes::transactions::create_asset,
+            api_routes::transactions::update_asset,
             api_routes::transactions::delete_asset,
             api_routes::transactions::create_transaction,
             api_routes::transactions::list_portfolio_transactions,

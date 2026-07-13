@@ -15,11 +15,13 @@ pub fn build_rocket(pool: SqlitePool) -> Rocket<rocket::Build> {
             api_routes::portfolios::list_portfolios,
             api_routes::portfolios::get_portfolio,
             api_routes::portfolios::delete_portfolio,
+            api_routes::portfolios::update_portfolio,
             api_routes::analytics::get_portfolio_tax_summary,
             api_routes::analytics::get_portfolio_performance,
         ])
         .mount("/api", rocket::routes![
             api_routes::transactions::create_asset,
+            api_routes::transactions::update_asset,
             api_routes::transactions::delete_asset,
             api_routes::transactions::create_transaction,
             api_routes::transactions::list_portfolio_transactions,
