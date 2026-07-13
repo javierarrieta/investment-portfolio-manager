@@ -162,6 +162,7 @@ export default function PortfolioDetail({
               {taxSummary.assets.map((a) => {
                 const isExpanded = expandedAsset === a.symbol;
                 const assetModel = assets.find(am => am.symbol === a.symbol);
+                const displayCurrency = portfolio?.currency || 'USD';
                 return (
                   <React.Fragment key={a.symbol}>
                     <tr>
@@ -183,14 +184,14 @@ export default function PortfolioDetail({
                         </span>
                       </td>
                       <td>{a.current_shares.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
-                      <td>{formatCurrency(a.average_cost, assetModel?.currency || 'USD')}</td>
-                      <td>{formatCurrency(a.current_price, assetModel?.currency || 'USD')}</td>
-                      <td style={{ fontWeight: 600 }}>{formatCurrency(a.market_value, assetModel?.currency || 'USD')}</td>
+                      <td>{formatCurrency(a.average_cost, displayCurrency)}</td>
+                      <td>{formatCurrency(a.current_price, displayCurrency)}</td>
+                      <td style={{ fontWeight: 600 }}>{formatCurrency(a.market_value, displayCurrency)}</td>
                       <td style={{ color: a.realized_pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        {formatCurrency(a.realized_pnl, assetModel?.currency || 'USD')}
+                        {formatCurrency(a.realized_pnl, displayCurrency)}
                       </td>
                       <td style={{ color: a.unrealized_pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        {formatCurrency(a.unrealized_pnl, assetModel?.currency || 'USD')}
+                        {formatCurrency(a.unrealized_pnl, displayCurrency)}
                       </td>
                       <td style={{ fontWeight: 600, color: a.unrealized_roi >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                         {formatPercent(a.unrealized_roi)}
@@ -232,11 +233,11 @@ export default function PortfolioDetail({
                                   {a.tax_lots.map((lot, index) => (
                                     <tr key={index}>
                                       <td>{new Date(lot.buy_date).toLocaleDateString()}</td>
-                                      <td>{formatCurrency(lot.buy_price, assetModel?.currency || 'USD')}</td>
+                                      <td>{formatCurrency(lot.buy_price, displayCurrency)}</td>
                                       <td>{lot.remaining_qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
                                       <td>{lot.original_qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
                                       <td style={{ color: lot.latent_gain_loss >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                        {formatCurrency(lot.latent_gain_loss, assetModel?.currency || 'USD')}
+                                        {formatCurrency(lot.latent_gain_loss, displayCurrency)}
                                       </td>
                                       <td style={{ color: lot.latent_roi >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                                         {formatPercent(lot.latent_roi)}
