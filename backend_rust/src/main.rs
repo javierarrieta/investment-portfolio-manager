@@ -16,6 +16,7 @@ use sqlx::sqlite::SqlitePool;
 use crate::services::currency_service::CurrencyService;
 use utoipa::OpenApi;
 use crate::openapi::ApiDoc;
+use rocket_cors::{CorsOptions, AllowedOrigins, AllowedHeaders};
 
 #[get("/")]
 fn index() -> &'static str {
@@ -32,6 +33,25 @@ async fn rocket() -> _ {
         .expect("Failed to connect to database");
 
     let currency_service = CurrencyService::new();
+
+    // Configure CORS
+    let cors = CorsOptions {
+        allowed_origins: AllowedOrigins::some_exact(&["http://localhost:5173", "http://127.0.0.1:5173"]),
+        allowed_methods: vec![
+            rocket::http::Method::Get,
+            rocket::http::Method::Post,
+            rocket::http::Method::Put,
+            rocket::http::Method::Patch,
+            rocket::http::Method::Delete,
+            rocket::http::Method::Options,
+        ]
+            .into_iter()
+            .map(|m| m.into())
+            .collect(),
+        allowed_headers: AllowedHeaders::some(&["Content-Type", "Authorization"]),
+        allow_credentials: true,
+        ..Default::default()
+    }.to_cors().expect("Failed to configure CORS");
 
     // Auto-create tables on startup if they don't exist
     sqlx::query("CREATE TABLE IF NOT EXISTS portfolios (
@@ -71,6 +91,7 @@ async fn rocket() -> _ {
     )").execute(&pool).await.expect("Failed to create historical_prices table");
 
     rocket::build()
+        .attach(cors)
         .manage(pool)
         .manage(currency_service)
         .mount("/", routes![index])
