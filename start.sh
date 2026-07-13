@@ -10,12 +10,27 @@ echo "================================================"
 # 1. Start Backend Rust
 echo "⚙️  Starting Backend API on http://127.0.0.1:8000..."
 cd backend_rust
-/home/coder/.cargo/bin/cargo run &
+cargo run &
 BACKEND_PID=$!
 cd ..
 
-# Give backend a moment to spin up
-sleep 1.5
+# Wait for backend to be ready
+for i in $(seq 1 15); do
+  if curl -s http://127.0.0.1:8000/ > /dev/null 2>&1; then
+    echo "✅ Backend is running"
+    break
+  fi
+  if ! kill -0 $BACKEND_PID 2>/dev/null; then
+    echo "❌ Backend failed to start"
+    exit 1
+  fi
+  sleep 0.5
+done
+
+if ! curl -s http://127.0.0.1:8000/ > /dev/null 2>&1; then
+  echo "❌ Backend failed to become ready"
+  exit 1
+fi
 
 # 2. Start Frontend Vite
 echo "💻 Starting Frontend Web App on http://localhost:5173..."
@@ -23,6 +38,24 @@ cd frontend
 npm run dev &
 FRONTEND_PID=$!
 cd ..
+
+# Wait for frontend to be ready
+for i in $(seq 1 15); do
+  if curl -s http://localhost:5173/ > /dev/null 2>&1; then
+    echo "✅ Frontend is running"
+    break
+  fi
+  if ! kill -0 $FRONTEND_PID 2>/dev/null; then
+    echo "❌ Frontend failed to start"
+    exit 1
+  fi
+  sleep 0.5
+done
+
+if ! curl -s http://localhost:5173/ > /dev/null 2>&1; then
+  echo "❌ Frontend failed to become ready"
+  exit 1
+fi
 
 echo "================================================"
 echo "✨ Both servers are running!"
