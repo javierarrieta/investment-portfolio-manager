@@ -33,6 +33,43 @@ async fn rocket() -> _ {
 
     let currency_service = CurrencyService::new();
 
+    // Auto-create tables on startup if they don't exist
+    sqlx::query("CREATE TABLE IF NOT EXISTS portfolios (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        description TEXT,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        base_currency TEXT NOT NULL DEFAULT 'USD'
+    )").execute(&pool).await.expect("Failed to create portfolios table");
+
+    sqlx::query("CREATE TABLE IF NOT EXISTS assets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        portfolio_id INTEGER NOT NULL,
+        symbol TEXT NOT NULL,
+        name TEXT NOT NULL,
+        asset_type TEXT NOT NULL,
+        sector TEXT,
+        currency TEXT NOT NULL DEFAULT 'USD',
+        FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
+    )").execute(&pool).await.expect("Failed to create assets table");
+
+    sqlx::query("CREATE TABLE IF NOT EXISTS transactions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        asset_id INTEGER NOT NULL,
+        type TEXT NOT NULL,
+        quantity REAL NOT NULL,
+        price REAL NOT NULL,
+        fee REAL NOT NULL,
+        date TEXT NOT NULL,
+        FOREIGN KEY (asset_id) REFERENCES assets(id)
+    )").execute(&pool).await.expect("Failed to create transactions table");
+
+    sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (
+        symbol TEXT NOT NULL,
+        date DATE NOT NULL,
+        close_price REAL NOT NULL
+    )").execute(&pool).await.expect("Failed to create historical_prices table");
+
     rocket::build()
         .manage(pool)
         .manage(currency_service)
