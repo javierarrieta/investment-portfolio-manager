@@ -94,3 +94,51 @@ async fn test_delete_portfolio_not_found() {
     let resp = client.delete("/api/portfolios/9999").dispatch().await;
     assert_eq!(resp.status(), Status::NotFound);
 }
+
+#[tokio::test]
+async fn test_update_portfolio_currency() {
+    let pool = setup_db().await;
+    let id = seed_portfolio(&pool, "Update Cur", "USD").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let body = Json(serde_json::json!({
+        "currency": "EUR"
+    }));
+
+    let resp = client.patch(format!("/api/portfolios/{}", id))
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::Ok);
+    let body_str = resp.into_string().await.unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+    assert_eq!(parsed["currency"], "EUR");
+
+    // Verify the change persisted
+    let resp = client.get(format!("/api/portfolios/{}", id)).dispatch().await;
+    let body_str = resp.into_string().await.unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+    assert_eq!(parsed["currency"], "EUR");
+}
+
+#[tokio::test]
+async fn test_update_portfolio_not_found() {
+    let pool = setup_db().await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let body = Json(serde_json::json!({
+        "currency": "EUR"
+    }));
+
+    let resp = client.patch("/api/portfolios/9999")
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::NotFound);
+}

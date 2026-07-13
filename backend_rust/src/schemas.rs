@@ -246,4 +246,24 @@ mod tests {
         assert_eq!(deserialized.symbol, "AAPL");
         assert!((deserialized.unrealized_pnl - 1000.0).abs() < f64::EPSILON);
     }
+
+    #[test]
+    fn test_portfolio_update_roundtrip() {
+        let u = PortfolioUpdate {
+            currency: "EUR".to_string(),
+        };
+        let json = serde_json::to_string(&u).unwrap();
+        let deserialized: PortfolioUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.currency, "EUR");
+    }
+
+    #[test]
+    fn test_asset_update_roundtrip() {
+        let u = AssetUpdate {
+            currency: "GBP".to_string(),
+        };
+        let json = serde_json::to_string(&u).unwrap();
+        let deserialized: AssetUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.currency, "GBP");
+    }
 }
