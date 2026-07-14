@@ -10,7 +10,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-RUN curl -fsSL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ -C /usr/local && \
+RUN curl -fsSL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.gz | tar -xzf - -C /usr/local && \
     ln -s /usr/local/zig-linux-x86_64-0.14.0/zig /usr/local/bin/zig
 
 RUN cargo install cargo-zigbuild
