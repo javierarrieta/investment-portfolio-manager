@@ -3,11 +3,14 @@
 # --- Stage 1: Build ---
 FROM rust:1.92-slim AS builder
 
-# Install SQLite dev headers required by sqlx at compile time
+# Install SQLite dev headers required by sqlx at compile time, plus zig for cross-compilation
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libsqlite3-dev \
+    zig \
     && rm -rf /var/lib/apt/lists/*
+
+RUN cargo install cargo-zigbuild
 
 WORKDIR /build
 
@@ -15,8 +18,8 @@ WORKDIR /build
 COPY Cargo.toml Cargo.lock ./
 COPY src/ src/
 
-# Build release binary
-RUN cargo build --release --bin backend_rust
+ARG TARGET=x86_64-unknown-linux-gnu
+RUN cargo zigbuild --release --target $TARGET --bin backend_rust
 
 # --- Stage 2: Runtime ---
 FROM debian:bookworm-slim AS runtime
@@ -28,8 +31,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Copy the compiled binary from builder stage
-COPY --from=builder /build/target/release/backend_rust /app/backend_rust
+# Copy the compiled binary from builder stage (path includes target triple for cross-compilation)
+COPY --from=builder /build/target/${TARGET}/release/backend_rust /app/backend_rust
 
 # Expose volume for persistent SQLite database
 VOLUME /app/data
