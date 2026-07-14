@@ -10,6 +10,20 @@ import {
   AssetType
 } from '../types';
 
+function detectCurrencyFromSymbol(symbol: string): string {
+  const s = symbol.toUpperCase();
+  if (s.endsWith('.DE') || s.endsWith('.F') || s.endsWith('.FR')) return 'EUR';
+  if (s.endsWith('.L')) return 'GBP';
+  if (s.endsWith('.T')) return 'JPY';
+  if (s.endsWith('.HK')) return 'HKD';
+  if (s.endsWith('.SX') || s.endsWith('.SW')) return 'CHF';
+  if (s.endsWith('.TO')) return 'CAD';
+  if (s.endsWith('.AX')) return 'AUD';
+  if (s.endsWith('.K')) return 'KRW';
+  if (s.includes('USD') || s.includes('BTC') || s.includes('ETH')) return 'USD';
+  return 'USD';
+}
+
 interface PortfolioDetailProps {
   portfolio: Portfolio;
   taxSummary: TaxSummary;
@@ -65,6 +79,8 @@ export default function PortfolioDetail({
 
   // Group assets for transaction modal dropdown
   const assets = portfolio.assets || [];
+  const selectedTxAsset = assets.find(a => a.id === Number(txForm.asset_id));
+  const txCurrency = selectedTxAsset?.currency || portfolio.currency || 'USD';
 
   return (
     <div className="portfolio-detail-container">
@@ -146,6 +162,7 @@ export default function PortfolioDetail({
               {taxSummary.assets.map((a) => {
                 const isExpanded = expandedAsset === a.symbol;
                 const assetModel = assets.find(am => am.symbol === a.symbol);
+                const displayCurrency = portfolio?.currency || 'USD';
                 return (
                   <React.Fragment key={a.symbol}>
                     <tr>
@@ -167,14 +184,14 @@ export default function PortfolioDetail({
                         </span>
                       </td>
                       <td>{a.current_shares.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
-                      <td>{formatCurrency(a.average_cost, assetModel?.currency || 'USD')}</td>
-                      <td>{formatCurrency(a.current_price, assetModel?.currency || 'USD')}</td>
-                      <td style={{ fontWeight: 600 }}>{formatCurrency(a.market_value, assetModel?.currency || 'USD')}</td>
+                      <td>{formatCurrency(a.average_cost, displayCurrency)}</td>
+                      <td>{formatCurrency(a.current_price, displayCurrency)}</td>
+                      <td style={{ fontWeight: 600 }}>{formatCurrency(a.market_value, displayCurrency)}</td>
                       <td style={{ color: a.realized_pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        {formatCurrency(a.realized_pnl, assetModel?.currency || 'USD')}
+                        {formatCurrency(a.realized_pnl, displayCurrency)}
                       </td>
                       <td style={{ color: a.unrealized_pnl >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                        {formatCurrency(a.unrealized_pnl, assetModel?.currency || 'USD')}
+                        {formatCurrency(a.unrealized_pnl, displayCurrency)}
                       </td>
                       <td style={{ fontWeight: 600, color: a.unrealized_roi >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                         {formatPercent(a.unrealized_roi)}
@@ -216,11 +233,11 @@ export default function PortfolioDetail({
                                   {a.tax_lots.map((lot, index) => (
                                     <tr key={index}>
                                       <td>{new Date(lot.buy_date).toLocaleDateString()}</td>
-                                      <td>{formatCurrency(lot.buy_price, assetModel?.currency || 'USD')}</td>
+                                      <td>{formatCurrency(lot.buy_price, displayCurrency)}</td>
                                       <td>{lot.remaining_qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
                                       <td>{lot.original_qty.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
                                       <td style={{ color: lot.latent_gain_loss >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
-                                        {formatCurrency(lot.latent_gain_loss, assetModel?.currency || 'USD')}
+                                        {formatCurrency(lot.latent_gain_loss, displayCurrency)}
                                       </td>
                                       <td style={{ color: lot.latent_roi >= 0 ? 'var(--color-success)' : 'var(--color-danger)' }}>
                                         {formatPercent(lot.latent_roi)}
@@ -253,7 +270,11 @@ export default function PortfolioDetail({
                 <input 
                   type="text" 
                   value={assetForm.symbol} 
-                  onChange={(e) => setAssetForm({ ...assetForm, symbol: e.target.value.toUpperCase() })} 
+                  onChange={(e) => {
+                    const upper = e.target.value.toUpperCase();
+                    const detected = detectCurrencyFromSymbol(upper);
+                    setAssetForm(prev => ({ ...prev, symbol: upper, currency: detected }));
+                  }}
                   className="form-control"
                   required 
                 />
@@ -307,7 +328,7 @@ export default function PortfolioDetail({
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button type="button" onClick={() => setShowAssetModal(false)} className="btn btn-secondary">Cancel</button>
+                <button type="button" onClick={() => { setShowAssetModal(false); setAssetForm({ symbol: '', name: '', asset_type: 'STOCK' as AssetType, sector: '', currency: 'USD' }); }} className="btn btn-secondary">Cancel</button>
                 <button type="submit" className="btn btn-primary">Add Symbol</button>
               </div>
             </form>
@@ -359,7 +380,7 @@ export default function PortfolioDetail({
                   />
                 </div>
                 <div className="form-group">
-                  <label>Price (USD)</label>
+                  <label>Price ({txCurrency})</label>
                   <input 
                     type="number" 
                     step="any" 
@@ -371,7 +392,7 @@ export default function PortfolioDetail({
                 </div>
               </div>
               <div className="form-group">
-                <label>Transaction Fee (USD)</label>
+                <label>Transaction Fee ({txCurrency})</label>
                 <input 
                   type="number" 
                   step="any" 

@@ -30,6 +30,7 @@ pub struct AssetCreate {
     pub name: String,
     pub asset_type: String,
     pub sector: Option<String>,
+    pub currency: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -40,6 +41,7 @@ pub struct AssetOut {
     pub name: String,
     pub asset_type: String,
     pub sector: Option<String>,
+    pub currency: String,
     pub transactions: Vec<TransactionOut>,
 }
 
@@ -58,6 +60,18 @@ pub struct PortfolioOut {
     pub description: Option<String>,
     pub currency: String,
     pub assets: Vec<AssetOut>,
+}
+
+// --- Portfolio Update ---
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct PortfolioUpdate {
+    pub currency: String,
+}
+
+// --- Asset Update ---
+#[derive(Debug, Serialize, Deserialize, ToSchema)]
+pub struct AssetUpdate {
+    pub currency: String,
 }
 
 // --- Tax Lot Out ---
@@ -137,11 +151,13 @@ mod tests {
             name: "Tesla Inc".to_string(),
             asset_type: "STOCK".to_string(),
             sector: Some("Auto".to_string()),
+            currency: "USD".to_string(),
         };
         let json = serde_json::to_string(&a).unwrap();
         let deserialized: AssetCreate = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "TSLA");
         assert_eq!(deserialized.asset_type, "STOCK");
+        assert_eq!(deserialized.currency, "USD");
         assert_eq!(deserialized.sector, Some("Auto".to_string()));
     }
 
@@ -184,11 +200,13 @@ mod tests {
             name: "Apple Inc".to_string(),
             asset_type: "STOCK".to_string(),
             sector: Some("Technology".to_string()),
+            currency: "USD".to_string(),
             transactions: vec![],
         };
         let json = serde_json::to_string(&a).unwrap();
         let deserialized: AssetOut = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "AAPL");
+        assert_eq!(deserialized.currency, "USD");
         assert_eq!(deserialized.sector, Some("Technology".to_string()));
     }
 
@@ -227,5 +245,25 @@ mod tests {
         let deserialized: AssetTaxSummary = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "AAPL");
         assert!((deserialized.unrealized_pnl - 1000.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn test_portfolio_update_roundtrip() {
+        let u = PortfolioUpdate {
+            currency: "EUR".to_string(),
+        };
+        let json = serde_json::to_string(&u).unwrap();
+        let deserialized: PortfolioUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.currency, "EUR");
+    }
+
+    #[test]
+    fn test_asset_update_roundtrip() {
+        let u = AssetUpdate {
+            currency: "GBP".to_string(),
+        };
+        let json = serde_json::to_string(&u).unwrap();
+        let deserialized: AssetUpdate = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.currency, "GBP");
     }
 }

@@ -18,6 +18,15 @@ From root:
 ### Backend
 - **Start API**: `cargo run` (run from `backend_rust/`)
 - **Test**: `cargo test` (run from `backend_rust/`)
+- **Update OpenAPI Spec**: When API routes or schemas change, regenerate and save:
+  ```bash
+  cd backend_rust
+  touch portfolio.db
+  cargo run --release &
+  sleep 12
+  curl -s http://127.0.0.1:8000/api-docs/openapi.json > ../docs/openapi/openapi.json
+  kill $(jobs -p)
+  ```
 
 ### Frontend
 - **Dev Server**: `npm run dev` (run from `frontend/`)

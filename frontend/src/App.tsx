@@ -46,6 +46,7 @@ export default function App() {
   const [showNewPortfolioModal, setShowNewPortfolioModal] = useState(false);
   const [newPortfolioName, setNewPortfolioName] = useState('');
   const [newPortfolioDesc, setNewPortfolioDesc] = useState('');
+  const [newPortfolioCurrency, setNewPortfolioCurrency] = useState('USD');
 
   // Fetch initial portfolios list
   const fetchPortfolios = useCallback(async () => {
@@ -120,7 +121,7 @@ export default function App() {
       const res = await fetch(`${API_BASE}/portfolios/`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newPortfolioName, description: newPortfolioDesc })
+        body: JSON.stringify({ name: newPortfolioName, description: newPortfolioDesc, currency: newPortfolioCurrency })
       });
       if (!res.ok) throw new Error('Failed to create portfolio');
       const newP = await res.json();
@@ -128,6 +129,7 @@ export default function App() {
       setSelectedId(newP.id);
       setNewPortfolioName('');
       setNewPortfolioDesc('');
+      setNewPortfolioCurrency('USD');
       setShowNewPortfolioModal(false);
       setLoading(false);
     } catch (err) {
@@ -386,7 +388,7 @@ export default function App() {
             )}
 
             {activeTab === 'analytics' && (
-              <AnalyticsView performance={performance} />
+              <AnalyticsView performance={performance} currency={currentPortfolio?.currency || 'USD'} />
             )}
 
             {activeTab === 'ledger' && (
@@ -483,6 +485,25 @@ export default function App() {
                   rows={3}
                   placeholder="Describe the objective of this portfolio..."
                 />
+              </div>
+              <div className="form-group">
+                <label>Currency</label>
+                <select
+                  value={newPortfolioCurrency}
+                  onChange={(e) => setNewPortfolioCurrency(e.target.value)}
+                  className="form-control"
+                >
+                  <option value="USD">USD - US Dollar</option>
+                  <option value="EUR">EUR - Euro</option>
+                  <option value="GBP">GBP - British Pound</option>
+                  <option value="JPY">JPY - Japanese Yen</option>
+                  <option value="CHF">CHF - Swiss Franc</option>
+                  <option value="CAD">CAD - Canadian Dollar</option>
+                  <option value="AUD">AUD - Australian Dollar</option>
+                  <option value="NZD">NZD - New Zealand Dollar</option>
+                  <option value="CNY">CNY - Chinese Yuan</option>
+                  <option value="INR">INR - Indian Rupee</option>
+                </select>
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
                 <button type="button" onClick={() => setShowNewPortfolioModal(false)} className="btn btn-secondary">Cancel</button>

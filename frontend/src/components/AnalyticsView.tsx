@@ -2,7 +2,7 @@ import React from 'react';
 import { ShieldAlert, Info, TrendingUp, Flame } from 'lucide-react';
 import { PortfolioPerformance } from '../types';
 
-export default function AnalyticsView({ performance }: { performance: PortfolioPerformance | null }) {
+export default function AnalyticsView({ performance, currency = 'USD' }: { performance: PortfolioPerformance | null; currency?: string }) {
   if (!performance || !performance.metrics || performance.history.length === 0) {
     return (
       <div className="glass-card" style={{ padding: '48px', textAlign: 'center' }}>
@@ -22,7 +22,8 @@ export default function AnalyticsView({ performance }: { performance: PortfolioP
   };
 
   const formatCurrency = (val: number) => {
-    return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(val);
+    const code = currency && currency.length > 0 ? currency : 'USD';
+    return new Intl.NumberFormat('en-US', { style: 'currency', currency: code }).format(val);
   };
 
   // Get color for correlation cells

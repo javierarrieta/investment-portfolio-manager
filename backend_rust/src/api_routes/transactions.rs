@@ -1,7 +1,8 @@
 use rocket::{State, serde::json::Json, http::Status};
 use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction};
-use crate::schemas::{AssetCreate, AssetOut, TransactionCreate, TransactionOut};
+use crate::schemas::{AssetCreate, AssetOut, AssetUpdate, TransactionCreate, TransactionOut};
+use crate::services::currency_service::CurrencyService;
 
 #[utoipa::path(
     post,
@@ -16,6 +17,7 @@ use crate::schemas::{AssetCreate, AssetOut, TransactionCreate, TransactionOut};
 pub async fn create_asset(
     portfolio_id: i32,
     pool: &State<SqlitePool>,
+    _currency_service: &State<CurrencyService>,
     asset: Json<AssetCreate>
 ) -> Result<Json<AssetOut>, Status> {
     let existing = sqlx::query_as::<_, Asset>(
@@ -31,15 +33,22 @@ pub async fn create_asset(
         return Err(Status::BadRequest);
     }
 
+    let resolved_currency = if asset.currency.is_empty() {
+        CurrencyService::detect_currency(&asset.symbol)
+    } else {
+        asset.currency.clone()
+    };
+
     let res = sqlx::query_as::<_, Asset>(
-        "INSERT INTO assets (portfolio_id, symbol, name, asset_type, sector) 
-         VALUES (?, ?, ?, ?, ?) RETURNING *"
+        "INSERT INTO assets (portfolio_id, symbol, name, asset_type, sector, currency) 
+         VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
     )
     .bind(portfolio_id)
     .bind(asset.symbol.to_uppercase())
     .bind(&asset.name)
     .bind(asset.asset_type.to_uppercase())
     .bind(&asset.sector)
+    .bind(&resolved_currency)
     .fetch_one(pool.inner())
     .await
     .map_err(|_| Status::InternalServerError)?;
@@ -51,8 +60,56 @@ pub async fn create_asset(
         name: res.name,
         asset_type: res.asset_type,
         sector: res.sector,
+        currency: res.currency,
         transactions: vec![],
     }))
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/portfolios/<portfolio_id>/assets/<asset_id>",
+    responses(
+        (status = 200, description = "Asset updated", body = AssetOut),
+        (status = 404, description = "Asset not found")
+    )
+)]
+#[patch("/portfolios/<portfolio_id>/assets/<asset_id>", data = "<update>")]
+pub async fn update_asset(
+    portfolio_id: i32,
+    asset_id: i32,
+    pool: &State<SqlitePool>,
+    update: Json<AssetUpdate>
+) -> Result<Json<AssetOut>, Status> {
+    sqlx::query("UPDATE assets SET currency = ? WHERE id = ? AND portfolio_id = ?")
+        .bind(&update.currency)
+        .bind(asset_id)
+        .bind(portfolio_id)
+        .execute(pool.inner())
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    let asset = sqlx::query_as::<_, Asset>(
+        "SELECT * FROM assets WHERE id = ? AND portfolio_id = ?"
+    )
+    .bind(asset_id)
+    .bind(portfolio_id)
+    .fetch_optional(pool.inner())
+    .await
+    .map_err(|_| Status::InternalServerError)?;
+
+    match asset {
+        Some(a) => Ok(Json(AssetOut {
+            id: a.id,
+            portfolio_id: a.portfolio_id,
+            symbol: a.symbol,
+            name: a.name,
+            asset_type: a.asset_type,
+            sector: a.sector,
+            currency: a.currency,
+            transactions: vec![],
+        })),
+        None => Err(Status::NotFound),
+    }
 }
 
 #[utoipa::path(

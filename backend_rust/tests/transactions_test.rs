@@ -16,7 +16,8 @@ async fn test_create_asset() {
         "symbol": "AAPL",
         "name": "Apple Inc",
         "asset_type": "STOCK",
-        "sector": "Technology"
+        "sector": "Technology",
+        "currency": "USD"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -44,7 +45,8 @@ async fn test_create_duplicate_asset_returns_400() {
         "symbol": "AAPL",
         "name": "Apple Inc",
         "asset_type": "STOCK",
-        "sector": null
+        "sector": null,
+        "currency": "USD"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -168,4 +170,81 @@ async fn test_delete_transaction_not_found() {
 
     let resp = client.delete("/api/transactions/9999").dispatch().await;
     assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[tokio::test]
+async fn test_update_asset_currency() {
+    let pool = setup_db().await;
+    let port_id = seed_portfolio(&pool, "Update Asset Cur", "USD").await;
+    let asset_id = seed_asset(&pool, port_id, "SAP", "SAP").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let body = Json(serde_json::json!({
+        "currency": "EUR"
+    }));
+
+    let resp = client.patch(format!("/api/portfolios/{}/assets/{}", port_id, asset_id))
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::Ok);
+    let body_str = resp.into_string().await.unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+    assert_eq!(parsed["currency"], "EUR");
+
+    // Verify the change persisted by listing transactions (which includes asset info)
+    let resp = client.get(format!("/api/portfolios/{}/transactions", port_id)).dispatch().await;
+    assert_eq!(resp.status(), Status::Ok);
+}
+
+#[tokio::test]
+async fn test_update_asset_not_found() {
+    let pool = setup_db().await;
+    let port_id = seed_portfolio(&pool, "Update Asset 404", "USD").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let body = Json(serde_json::json!({
+        "currency": "EUR"
+    }));
+
+    let resp = client.patch(format!("/api/portfolios/{}/assets/9999", port_id))
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::NotFound);
+}
+
+#[tokio::test]
+async fn test_create_asset_currency_detection_fallback() {
+    let pool = setup_db().await;
+    let port_id = seed_portfolio(&pool, "Detect Cur", "USD").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    // Send asset with empty currency — backend should detect from symbol
+    let body = Json(serde_json::json!({
+        "symbol": "SAP.DE",
+        "name": "SAP SE",
+        "asset_type": "STOCK",
+        "sector": "Technology",
+        "currency": ""
+    }));
+
+    let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::Ok);
+    let body_str = resp.into_string().await.unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+    assert_eq!(parsed["symbol"], "SAP.DE");
+    assert_eq!(parsed["currency"], "EUR");
 }

@@ -1,7 +1,7 @@
 use rocket::{State, serde::json::Json, http::Status};
 use sqlx::SqlitePool;
 use crate::models::Portfolio as DbPortfolio;
-use crate::schemas::{PortfolioCreate, PortfolioOut};
+use crate::schemas::{PortfolioCreate, PortfolioOut, PortfolioUpdate};
 
 #[utoipa::path(
     post,
@@ -75,6 +75,48 @@ pool: &State<SqlitePool>) -> Result<Json<Vec<PortfolioOut>>, Status> {
 )]
 #[get("/<id>")]
 pub async fn get_portfolio(id: i32, pool: &State<SqlitePool>) -> Result<Json<PortfolioOut>, Status> {
+
+    let p = sqlx::query_as::<_, DbPortfolio>("SELECT * FROM portfolios WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    match p {
+        Some(p) => Ok(Json(PortfolioOut {
+            id: p.id,
+            name: p.name,
+            description: p.description,
+            currency: p.currency,
+            assets: vec![],
+        })),
+        None => Err(Status::NotFound),
+    }
+}
+
+#[utoipa::path(
+    patch,
+    path = "/api/portfolios/<id>",
+    responses(
+        (status = 200, description = "Portfolio updated", body = PortfolioOut),
+        (status = 404, description = "Portfolio not found")
+    )
+)]
+#[patch("/<id>", data = "<update>")]
+pub async fn update_portfolio(
+    id: i32,
+    pool: &State<SqlitePool>,
+    update: Json<PortfolioUpdate>
+) -> Result<Json<PortfolioOut>, Status> {
+    let new_currency = &update.currency;
+
+    sqlx::query("UPDATE portfolios SET currency = ?, base_currency = ? WHERE id = ?")
+        .bind(new_currency)
+        .bind(new_currency)
+        .bind(id)
+        .execute(pool.inner())
+        .await
+        .map_err(|_| Status::InternalServerError)?;
 
     let p = sqlx::query_as::<_, DbPortfolio>("SELECT * FROM portfolios WHERE id = ?")
         .bind(id)
