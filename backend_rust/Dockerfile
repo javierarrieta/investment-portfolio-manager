@@ -7,7 +7,12 @@ FROM rust:1.92-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libsqlite3-dev \
+    curl \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://ziglang.org/download/0.14.1/zig-linux-x86_64-0.14.1.tar.xz | tar -xJ -C /opt
+ENV PATH=/opt/zig-linux-x86_64-0.14.1:$PATH
 
 RUN cargo install cargo-zigbuild
 
