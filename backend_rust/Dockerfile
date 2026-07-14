@@ -7,8 +7,11 @@ FROM rust:1.92-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libsqlite3-dev \
-    zig \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://ziglang.org/download/0.14.0/zig-linux-x86_64-0.14.0.tar.xz | tar -xJ -C /usr/local && \
+    ln -s /usr/local/zig-linux-x86_64-0.14.0/zig /usr/local/bin/zig
 
 RUN cargo install cargo-zigbuild
 
@@ -23,6 +26,8 @@ RUN cargo zigbuild --release --target $TARGET --bin backend_rust
 
 # --- Stage 2: Runtime ---
 FROM debian:bookworm-slim AS runtime
+
+ARG TARGET=x86_64-unknown-linux-gnu
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 \
