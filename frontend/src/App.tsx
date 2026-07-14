@@ -24,7 +24,7 @@ import {
   TransactionType
 } from './types';
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+const API_BASE = '/api';
 
 export default function App() {
   const [portfolios, setPortfolios] = useState<Portfolio[]>([]);
