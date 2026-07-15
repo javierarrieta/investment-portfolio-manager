@@ -11,18 +11,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN ARCH=$(uname -m) && \
-    if [ "$ARCH" = "aarch64" ]; then \
-        ZIG_ARCH="aarch64"; \
-    elif [ "$ARCH" = "x86_64" ]; then \
-        ZIG_ARCH="x86_64"; \
-    else \
-        echo "Unsupported architecture: $ARCH" && exit 1; \
-    fi && \
-    curl -fsSL "https://ziglang.org/download/0.16.0/zig-${ZIG_ARCH}-linux-0.16.0.tar.xz" | tar -xJ -C /opt && \
-    ln -s "/opt/zig-${ZIG_ARCH}-linux-0.16.0/zig" /usr/local/bin/zig
-
 RUN cargo install cargo-zigbuild
+RUN curl -fsSL "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" | tar -xJ -C /opt && \
+    cp "/opt/zig-x86_64-linux-0.16.0/zig" /usr/local/bin/zig && \
+    chmod +x /usr/local/bin/zig && \
+    /usr/local/bin/zig version
 
 WORKDIR /build
 
