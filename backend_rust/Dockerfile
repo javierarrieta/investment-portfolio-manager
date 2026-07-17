@@ -3,6 +3,8 @@
 # --- Stage 1: Build ---
 FROM rust:1.92-slim AS builder
 
+ARG TARGETARCH
+
 # Install SQLite dev headers required by sqlx at compile time
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
@@ -11,11 +13,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
 
-RUN cargo install cargo-zigbuild
-RUN curl -fsSL "https://ziglang.org/download/0.16.0/zig-x86_64-linux-0.16.0.tar.xz" | tar -xJ -C /opt && \
-    cp "/opt/zig-x86_64-linux-0.16.0/zig" /usr/local/bin/zig && \
-    chmod +x /usr/local/bin/zig && \
+RUN if [ "$TARGETARCH" = "amd64" ]; then ARCH="x86_64"; elif [ "$TARGETARCH" = "arm64" ]; then ARCH="aarch64"; else ARCH="x86_64"; fi && \
+    curl -fsSL "https://ziglang.org/download/0.14.1/zig-$ARCH-linux-0.14.1.tar.xz" | tar -xJ -C /opt && \
+    ln -s /opt/zig-$ARCH-linux-0.14.1/zig /usr/local/bin/zig && \
     /usr/local/bin/zig version
+
+RUN cargo install cargo-zigbuild
 
 WORKDIR /build
 
