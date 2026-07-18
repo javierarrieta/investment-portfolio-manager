@@ -3,12 +3,20 @@
 # --- Stage 1: Build ---
 FROM rust:1.92-slim AS builder
 
-# Install SQLite dev headers required by sqlx at compile time, plus zig for cross-compilation
+ARG TARGETARCH
+
+# Install SQLite dev headers required by sqlx at compile time
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libsqlite3-dev \
-    zig \
+    curl \
+    xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+RUN if [ "$TARGETARCH" = "amd64" ]; then ARCH="x86_64"; elif [ "$TARGETARCH" = "arm64" ]; then ARCH="aarch64"; else ARCH="x86_64"; fi && \
+    curl -fsSL "https://ziglang.org/download/0.14.1/zig-$ARCH-linux-0.14.1.tar.xz" | tar -xJ -C /opt && \
+    ln -s /opt/zig-$ARCH-linux-0.14.1/zig /usr/local/bin/zig && \
+    /usr/local/bin/zig version
 
 RUN cargo install cargo-zigbuild
 
@@ -23,6 +31,8 @@ RUN cargo zigbuild --release --target $TARGET --bin backend_rust
 
 # --- Stage 2: Runtime ---
 FROM debian:bookworm-slim AS runtime
+
+ARG TARGET=x86_64-unknown-linux-gnu
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libsqlite3-0 \
