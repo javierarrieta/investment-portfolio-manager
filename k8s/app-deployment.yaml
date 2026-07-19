@@ -57,6 +57,10 @@ spec:
               port: 80
             initialDelaySeconds: 3
             periodSeconds: 5
+          volumeMounts:
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: nginx.conf
         - name: backend
           image: ghcr.io/<org>/investment-portfolio-manager/backend:latest
           ports:
@@ -94,3 +98,6 @@ spec:
         - name: database
           persistentVolumeClaim:
             claimName: postgresql-db-pvc
+        - name: nginx-config
+          configMap:
+            name: frontend-config
