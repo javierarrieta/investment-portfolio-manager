@@ -69,7 +69,7 @@ jobs:
             runs-on: ubuntu-latest
           - platform: linux/arm64
             target: aarch64-unknown-linux-gnu
-            runs-on: casa-arm64-runners
+            runs-on: investment-portfolio-manager-arm64-runners
     runs-on: ${{ matrix.runs-on }}
     steps:
       - uses: actions/checkout@v7
