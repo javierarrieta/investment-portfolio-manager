@@ -1,73 +1,20 @@
 use chrono::{DateTime, Utc};
-use rocket::Rocket;
-use sqlx::sqlite::SqlitePool;
+use rocket::{Rocket, Build};
+use sqlx::SqlitePool;
+use backend_rust::{build_rocket as lib_build_rocket, init_db, get_cors_options};
+use backend_rust::services::currency_service::CurrencyService;
 
-pub fn build_rocket(pool: SqlitePool) -> Rocket<rocket::Build> {
-    use backend_rust::api_routes;
-    use backend_rust::services::currency_service::CurrencyService;
-
-    rocket::build()
-        .manage(pool)
-        .manage(CurrencyService::new())
-        .mount("/", rocket::routes![backend_rust::index])
-        .mount("/api/portfolios", rocket::routes![
-            api_routes::portfolios::create_portfolio,
-            api_routes::portfolios::list_portfolios,
-            api_routes::portfolios::get_portfolio,
-            api_routes::portfolios::delete_portfolio,
-            api_routes::portfolios::update_portfolio,
-            api_routes::analytics::get_portfolio_tax_summary,
-            api_routes::analytics::get_portfolio_performance,
-        ])
-        .mount("/api", rocket::routes![
-            api_routes::transactions::create_asset,
-            api_routes::transactions::update_asset,
-            api_routes::transactions::delete_asset,
-            api_routes::transactions::create_transaction,
-            api_routes::transactions::list_portfolio_transactions,
-            api_routes::transactions::delete_transaction,
-        ])
+pub fn build_rocket(pool: SqlitePool) -> Rocket<Build> {
+    let currency_service = CurrencyService::new();
+    let cors = get_cors_options(vec!["http://localhost:5173".to_string()]);
+    lib_build_rocket(pool, currency_service, cors)
 }
 
 pub async fn setup_db() -> SqlitePool {
     let pool = SqlitePool::connect(":memory:").await.unwrap();
     
-    sqlx::query("CREATE TABLE IF NOT EXISTS portfolios (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        name TEXT NOT NULL,
-        description TEXT,
-        currency TEXT NOT NULL DEFAULT 'USD',
-        base_currency TEXT NOT NULL DEFAULT 'USD'
-    )").execute(&pool).await.unwrap();
-
-    sqlx::query("CREATE TABLE IF NOT EXISTS assets (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        portfolio_id INTEGER NOT NULL,
-        symbol TEXT NOT NULL,
-        name TEXT NOT NULL,
-        asset_type TEXT NOT NULL,
-        sector TEXT,
-        currency TEXT NOT NULL DEFAULT 'USD',
-        FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
-    )").execute(&pool).await.unwrap();
-
-    sqlx::query("CREATE TABLE IF NOT EXISTS transactions (
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        asset_id INTEGER NOT NULL,
-        type TEXT NOT NULL,
-        quantity REAL NOT NULL,
-        price REAL NOT NULL,
-        fee REAL NOT NULL,
-        date TEXT NOT NULL,
-        FOREIGN KEY (asset_id) REFERENCES assets(id)
-    )").execute(&pool).await.unwrap();
-
-    sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (
-        symbol TEXT NOT NULL,
-        date DATE NOT NULL,
-        close_price REAL NOT NULL
-    )").execute(&pool).await.unwrap();
-
+    init_db(&pool).await.unwrap();
+    
     pool
 }
 
