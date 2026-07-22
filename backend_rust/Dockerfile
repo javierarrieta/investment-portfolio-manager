@@ -6,11 +6,7 @@ FROM rust:1.92-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libsqlite3-dev \
-    curl \
     && rm -rf /var/lib/apt/lists/*
-
-# Install sccache for faster subsequent builds
-RUN curl -fsSL https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-aarch64-unknown-linux-musl.tar.gz | tar xz -C /usr/local/bin --strip-components=1
 
 WORKDIR /build
 
