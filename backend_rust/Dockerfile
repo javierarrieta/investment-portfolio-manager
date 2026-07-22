@@ -6,15 +6,25 @@ FROM rust:1.92-slim AS builder
 RUN apt-get update && apt-get install -y --no-install-recommends \
     pkg-config \
     libsqlite3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
+
+# Install sccache for faster subsequent builds
+RUN curl -fsSL https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-aarch64-unknown-linux-musl.tar.gz | tar xz -C /usr/local/bin --strip-components=1
 
 WORKDIR /build
 
-# Copy dependency files first for layer caching
+# Copy only dependency files first for layer caching
 COPY Cargo.toml Cargo.lock ./
+
+# Pre-build dependencies (cached unless Cargo.toml/Cargo.lock change)
+RUN RUSTC_WRAPPER=sccache cargo build --release -j $(nproc) --bin backend_rust 2>/dev/null || true
+
+# Copy source code
 COPY src/ src/
 
-RUN cargo build --release --bin backend_rust
+# Full build with sccache
+RUN RUSTC_WRAPPER=sccache cargo build --release -j $(nproc) --bin backend_rust
 
 # --- Stage 2: Runtime ---
 FROM debian:bookworm-slim AS runtime
