@@ -17,9 +17,17 @@ async fn rocket() -> _ {
     
     let currency_service = CurrencyService::new();
 
-    let origins = std::env::var("ALLOWED_ORIGINS")
-        .map(|val| val.split(',').map(|s| s.trim().to_string()).collect())
-        .unwrap_or_else(|_| vec!["http://localhost:5173".to_string(), "http://127.0.0.1:5173".to_string()]);
+    let origins: Vec<String> = std::env::var("ALLOWED_ORIGINS")
+        .map(|val| {
+            eprintln!("ALLOWED_ORIGINS raw value: '{}'", val);
+            val.split(',').map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect()
+        })
+        .unwrap_or_else(|_| {
+            eprintln!("ALLOWED_ORIGINS env var not set, using defaults");
+            vec!["http://localhost:5173".to_string(), "http://127.0.0.1:5173".to_string()]
+        });
+
+    eprintln!("ALLOWED_ORIGINS parsed: {:?}", origins);
 
     let cors = get_cors_options(origins);
 
