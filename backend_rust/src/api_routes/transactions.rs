@@ -204,11 +204,6 @@ pub async fn list_portfolio_transactions(portfolio_id: i32, pool: &State<SqliteP
 
     let asset_ids: Vec<i32> = assets.into_iter().map(|a| a.0).collect();
 
-    
-    if asset_ids.is_empty() {
-        return Ok(Json(vec![]));
-    }
-
     if asset_ids.is_empty() {
         return Ok(Json(vec![]));
     }

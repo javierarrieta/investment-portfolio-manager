@@ -1,7 +1,8 @@
 use rocket::{State, serde::json::Json, http::Status};
 use sqlx::SqlitePool;
-use crate::models::Portfolio as DbPortfolio;
-use crate::schemas::{PortfolioCreate, PortfolioOut, PortfolioUpdate};
+use std::collections::HashMap;
+use crate::models::{Portfolio as DbPortfolio, Asset as DbAsset, Transaction as DbTransaction};
+use crate::schemas::{AssetOut, PortfolioCreate, PortfolioOut, PortfolioUpdate, TransactionOut};
 
 #[utoipa::path(
     post,
@@ -28,15 +29,69 @@ pub async fn create_portfolio(
     .await;
 
     match res {
-        Ok(p) => Ok(Json(PortfolioOut {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            currency: p.currency,
-            assets: vec![],
-        })),
+        Ok(p) => {
+            let assets = fetch_assets_for_portfolio(pool.inner(), p.id).await
+                .map_err(|_| Status::InternalServerError)?;
+            Ok(Json(PortfolioOut {
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                currency: p.currency,
+                assets,
+            }))
+        },
         Err(_) => Err(Status::InternalServerError),
     }
+}
+
+async fn fetch_assets_for_portfolio(pool: &sqlx::sqlite::SqlitePool, portfolio_id: i32) -> Result<Vec<AssetOut>, sqlx::Error> {
+    let assets = sqlx::query_as::<_, DbAsset>("SELECT * FROM assets WHERE portfolio_id = ?")
+        .bind(portfolio_id)
+        .fetch_all(pool)
+        .await?;
+
+    let asset_ids: Vec<i32> = assets.iter().map(|a| a.id).collect();
+
+    let all_txs = if asset_ids.is_empty() {
+        vec![]
+    } else {
+        let placeholders: Vec<String> = (0..asset_ids.len()).map(|_| "?".to_string()).collect();
+        let sql = format!("SELECT * FROM transactions WHERE asset_id IN ({})", placeholders.join(","));
+        let mut query = sqlx::query_as::<_, DbTransaction>(&sql);
+        for id in &asset_ids {
+            query = query.bind(id);
+        }
+        query.fetch_all(pool).await?
+    };
+
+    let mut txs_by_asset: HashMap<i32, Vec<TransactionOut>> = HashMap::new();
+    for tx in all_txs {
+        txs_by_asset
+            .entry(tx.asset_id)
+            .or_default()
+            .push(TransactionOut {
+                id: tx.id,
+                asset_id: tx.asset_id,
+                r#type: tx.r#type,
+                quantity: tx.quantity,
+                price: tx.price,
+                fee: tx.fee,
+                date: tx.date,
+            });
+    }
+
+    let out = assets.into_iter().map(|a| AssetOut {
+        id: a.id,
+        portfolio_id: a.portfolio_id,
+        symbol: a.symbol,
+        name: a.name,
+        asset_type: a.asset_type,
+        sector: a.sector,
+        currency: a.currency,
+        transactions: txs_by_asset.remove(&a.id).unwrap_or_default(),
+    }).collect();
+
+    Ok(out)
 }
 
 #[utoipa::path(
@@ -54,12 +109,34 @@ pool: &State<SqlitePool>) -> Result<Json<Vec<PortfolioOut>>, Status> {
         .await
         .map_err(|_| Status::InternalServerError)?;
 
+    let all_assets = sqlx::query_as::<_, DbAsset>("SELECT * FROM assets")
+        .fetch_all(pool.inner())
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    let mut by_portfolio: HashMap<i32, Vec<AssetOut>> = all_assets
+        .into_iter()
+        .map(|a| AssetOut {
+            id: a.id,
+            portfolio_id: a.portfolio_id,
+            symbol: a.symbol,
+            name: a.name,
+            asset_type: a.asset_type,
+            sector: a.sector,
+            currency: a.currency,
+            transactions: vec![],
+        })
+        .fold(HashMap::new(), |mut map, asset| {
+            map.entry(asset.portfolio_id).or_default().push(asset);
+            map
+        });
+
     let out = portfolios.into_iter().map(|p| PortfolioOut {
         id: p.id,
         name: p.name,
         description: p.description,
         currency: p.currency,
-        assets: vec![],
+        assets: by_portfolio.remove(&p.id).unwrap_or_default(),
     }).collect();
 
     Ok(Json(out))
@@ -83,13 +160,17 @@ pub async fn get_portfolio(id: i32, pool: &State<SqlitePool>) -> Result<Json<Por
         .map_err(|_| Status::InternalServerError)?;
 
     match p {
-        Some(p) => Ok(Json(PortfolioOut {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            currency: p.currency,
-            assets: vec![],
-        })),
+        Some(p) => {
+            let assets = fetch_assets_for_portfolio(pool.inner(), p.id).await
+                .map_err(|_| Status::InternalServerError)?;
+            Ok(Json(PortfolioOut {
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                currency: p.currency,
+                assets,
+            }))
+        },
         None => Err(Status::NotFound),
     }
 }
@@ -125,13 +206,17 @@ pub async fn update_portfolio(
         .map_err(|_| Status::InternalServerError)?;
 
     match p {
-        Some(p) => Ok(Json(PortfolioOut {
-            id: p.id,
-            name: p.name,
-            description: p.description,
-            currency: p.currency,
-            assets: vec![],
-        })),
+        Some(p) => {
+            let assets = fetch_assets_for_portfolio(pool.inner(), p.id).await
+                .map_err(|_| Status::InternalServerError)?;
+            Ok(Json(PortfolioOut {
+                id: p.id,
+                name: p.name,
+                description: p.description,
+                currency: p.currency,
+                assets,
+            }))
+        },
         None => Err(Status::NotFound),
     }
 }

@@ -89,6 +89,13 @@ export default function App() {
       const txData = await txRes.json();
       setTransactions(txData);
 
+      // 4. Refresh portfolio object to keep assets list in sync
+      const portfolioRes = await fetch(`${API_BASE}/portfolios/${id}`);
+      if (portfolioRes.ok) {
+        const portfolioData = await portfolioRes.json();
+        setPortfolios(prev => prev.map(p => p.id === id ? { ...p, assets: portfolioData.assets } : p));
+      }
+
       setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -151,8 +158,6 @@ export default function App() {
         throw new Error(errorData.detail || 'Failed to add asset');
       }
       if (selectedId) await fetchPortfolioData(selectedId);
-      // Also refresh main list to include assets
-      fetchPortfolios();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setLoading(false);
@@ -166,7 +171,6 @@ export default function App() {
       const res = await fetch(`${API_BASE}/assets/${assetId}`, { method: 'DELETE' });
       if (!res.ok) throw new Error('Failed to delete asset');
       if (selectedId) await fetchPortfolioData(selectedId);
-      fetchPortfolios();
     } catch (err) {
       alert(`Error deleting asset: ${err instanceof Error ? err.message : String(err)}`);
       setLoading(false);
