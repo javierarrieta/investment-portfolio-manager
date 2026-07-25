@@ -1,4 +1,4 @@
-use chrono::{NaiveDate, Utc, Datelike, TimeZone};
+use chrono::{NaiveDate, Utc, TimeZone};
 use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction, HistoricalPrice};
 use crate::services::currency_service::CurrencyService;
@@ -76,7 +76,10 @@ impl StatsEngine {
         let mut curr = start_date;
         while curr <= end_date {
             dates.push(curr);
-            curr = curr.succ_opt().unwrap();
+            match curr.succ_opt() {
+                Some(next) => curr = next,
+                None => break,
+            }
         }
 
         let mut history = Vec::new();
@@ -111,7 +114,7 @@ impl StatsEngine {
                 let mut final_price = price;
                 if asset.currency != base_currency {
                     // Simple date handling for currency service
-                    let date_utc = Utc.from_utc_datetime(&NaiveDate::from_ymd_opt(date.year(), date.month(), date.day()).unwrap().and_hms_opt(0,0,0).unwrap());
+                    let date_utc = Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap());
                     let rate = currency_service.get_rate(&asset.currency, base_currency, date_utc).await.unwrap_or(1.0);
                     final_price *= rate;
                 }
@@ -231,5 +234,71 @@ mod tests {
         let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
         // No historical prices in memory DB, so value should be 0
         assert!((value - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_multicurrency_asset_with_conversion() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let svc = CurrencyService::new();
+        
+        let asset = Asset {
+            id: 1,
+            portfolio_id: 1,
+            symbol: "NESF".to_string(),
+            name: "Nestle".to_string(),
+            asset_type: "STOCK".to_string(),
+            sector: None,
+            currency: "CHF".to_string(),
+        };
+        let tx = Transaction {
+            id: 1,
+            asset_id: 1,
+            r#type: "BUY".to_string(),
+            quantity: 10.0,
+            price: 100.0,
+            fee: 0.0,
+            date: DateTime::parse_from_rfc3339("2024-06-01T00:00:00Z").unwrap().with_timezone(&Utc),
+        };
+        
+        let result = StatsEngine::calculate_portfolio_performance(
+            &pool,
+            &[asset],
+            &[tx],
+            "USD",
+            &svc,
+        ).await.unwrap();
+
+        let metrics = result.get("metrics").unwrap();
+        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
+        // Value should be 0 since no historical prices, but currency conversion path should not panic
+        assert!((value - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_single_day_range_does_not_panic() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let svc = CurrencyService::new();
+        let assets = vec![empty_asset()];
+        let txs = vec![empty_tx()];
+        
+        // Should not panic even with single day range
+        let result = StatsEngine::calculate_portfolio_performance(
+            &pool,
+            &assets,
+            &txs,
+            "USD",
+            &svc,
+        ).await.unwrap();
+
+        let history = result.get("history").unwrap().as_array().unwrap();
+        assert!(!history.is_empty());
     }
 }
