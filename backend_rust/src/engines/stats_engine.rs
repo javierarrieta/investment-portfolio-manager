@@ -61,8 +61,14 @@ impl StatsEngine {
         }
 
         let tx_dates: Vec<NaiveDate> = transactions.iter().map(|tx| tx.date.date_naive()).collect();
-        let start_date = *tx_dates.iter().min().unwrap();
+        let mut start_date = *tx_dates.iter().min().unwrap();
         let end_date = Utc::now().date_naive();
+
+        // Sanity check: cap start date to 1900 to prevent massive loops from corrupt data
+        let min_reasonable_date = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
+        if start_date < min_reasonable_date {
+            start_date = min_reasonable_date;
+        }
 
         let symbols: Vec<String> = assets.iter().map(|a| a.symbol.clone()).collect();
         let prices_data = Self::get_historical_price_matrix(pool, &symbols, start_date, end_date).await?;
