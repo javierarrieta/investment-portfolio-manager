@@ -161,6 +161,14 @@ pub async fn create_transaction(
         return Err(Status::NotFound);
     }
 
+    // Validate date is within reasonable range
+    let tx_date = tx.date.date_naive();
+    let min_date = chrono::NaiveDate::from_ymd_opt(1900, 1, 1).ok_or(Status::BadRequest)?;
+    let max_date = chrono::NaiveDate::from_ymd_opt(2100, 1, 1).ok_or(Status::BadRequest)?;
+    if tx_date < min_date || tx_date > max_date {
+        return Err(Status::BadRequest);
+    }
+
     let res = sqlx::query_as::<_, Transaction>(
         "INSERT INTO transactions (asset_id, type, quantity, price, fee, date) 
          VALUES (?, ?, ?, ?, ?, ?) RETURNING *"

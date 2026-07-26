@@ -229,6 +229,32 @@ async fn test_update_asset_currency() {
 }
 
 #[tokio::test]
+async fn test_create_transaction_invalid_date_returns_400() {
+    let pool = setup_db().await;
+    let port_id = seed_portfolio(&pool, "Invalid Date", "USD").await;
+    let asset_id = seed_asset(&pool, port_id, "INVALID", "Invalid Asset").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    // Test date from year 11 AD
+    let body = Json(serde_json::json!({
+        "type": "BUY",
+        "quantity": 10.0,
+        "price": 150.0,
+        "fee": 5.0,
+        "date": "0011-11-21T11:37:21Z"
+    }));
+
+    let resp = client.post(format!("/api/portfolios/{}/assets/{}/transactions", port_id, asset_id))
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::BadRequest);
+}
+
+#[tokio::test]
 async fn test_update_asset_not_found() {
     let pool = setup_db().await;
     let port_id = seed_portfolio(&pool, "Update Asset 404", "USD").await;
