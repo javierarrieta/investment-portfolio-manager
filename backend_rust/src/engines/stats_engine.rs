@@ -8,9 +8,34 @@ use std::collections::HashMap;
 pub struct StatsEngine;
 
 impl StatsEngine {
-    #[allow(dead_code)]
-    pub async fn sync_historical_prices(_pool: &SqlitePool, _symbols: &[String], _start_date: NaiveDate) -> Result<()> {
-        // Implementation can be added here later using reqwest
+    pub async fn sync_historical_prices(
+        pool: &SqlitePool,
+        symbols: &[String],
+        currency_service: &CurrencyService,
+    ) -> Result<()> {
+        for symbol in symbols {
+            let existing = sqlx::query_as::<_, HistoricalPrice>(
+                "SELECT * FROM historical_prices WHERE symbol = ? ORDER BY date DESC LIMIT 1"
+            )
+            .bind(symbol)
+            .fetch_optional(pool)
+            .await?;
+
+            if existing.is_none() {
+                let price = currency_service.get_price(symbol, pool).await;
+                if price > 0.0 {
+                    let today = Utc::now().date_naive();
+                    let _ = sqlx::query(
+                        "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
+                    )
+                    .bind(symbol)
+                    .bind(today)
+                    .bind(price)
+                    .execute(pool)
+                    .await;
+                }
+            }
+        }
         Ok(())
     }
 
@@ -19,6 +44,7 @@ impl StatsEngine {
         symbols: &[String],
         start_date: NaiveDate,
         end_date: NaiveDate,
+        currency_service: &CurrencyService,
     ) -> Result<Vec<(NaiveDate, String, f64)>> {
         let mut all_prices = Vec::new();
         for symbol in symbols {
@@ -30,8 +56,25 @@ impl StatsEngine {
             .bind(end_date)
             .fetch_all(pool)
             .await?;
-            for p in prices {
-                all_prices.push((p.date, p.symbol, p.close_price));
+
+            if prices.is_empty() {
+                let price = currency_service.get_price(symbol, pool).await;
+                if price > 0.0 {
+                    let today = Utc::now().date_naive();
+                    all_prices.push((today, symbol.clone(), price));
+                    let _ = sqlx::query(
+                        "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
+                    )
+                    .bind(symbol)
+                    .bind(today)
+                    .bind(price)
+                    .execute(pool)
+                    .await;
+                }
+            } else {
+                for p in prices {
+                    all_prices.push((p.date, p.symbol, p.close_price));
+                }
             }
         }
         Ok(all_prices)
@@ -71,7 +114,7 @@ impl StatsEngine {
         }
 
         let symbols: Vec<String> = assets.iter().map(|a| a.symbol.clone()).collect();
-        let prices_data = Self::get_historical_price_matrix(pool, &symbols, start_date, end_date).await?;
+        let prices_data = Self::get_historical_price_matrix(pool, &symbols, start_date, end_date, currency_service).await?;
         
         let mut price_map: HashMap<(NaiveDate, String), f64> = HashMap::new();
         for (date, symbol, price) in prices_data {
