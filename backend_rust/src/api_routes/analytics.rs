@@ -59,8 +59,7 @@ pub async fn get_portfolio_tax_summary(
             .await
             .map_err(|_| Status::InternalServerError)?;
 
-        // In a real app, we'd fetch the actual current price from a service
-        let current_price = 100.0; 
+        let current_price = currency_service.get_price(&asset.symbol, pool.inner()).await; 
 
         let summary = TaxLotEngine::calculate_lots(
             &asset.symbol,
