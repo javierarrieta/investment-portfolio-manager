@@ -113,6 +113,11 @@ impl CurrencyService {
             }
         };
 
+        if !response.status().is_success() {
+            eprintln!("WARN: Yahoo Finance returned status {} for symbol {}", response.status(), symbol);
+            return 0.0;
+        }
+
         let yahoo_resp: YahooChartResponse = match response.json().await {
             Ok(r) => r,
             Err(e) => {
