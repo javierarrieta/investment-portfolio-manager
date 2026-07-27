@@ -5,6 +5,8 @@ use chrono::{DateTime, Utc, NaiveDate};
 use reqwest::Client;
 use serde::Deserialize;
 use anyhow::{Result, anyhow};
+use crate::models::HistoricalPrice;
+use sqlx::sqlite::SqlitePool;
 
 #[derive(Deserialize)]
 struct YahooChartResponse {
@@ -35,6 +37,7 @@ struct Quote {
 
 pub struct CurrencyService {
     client: Client,
+    timeout: std::time::Duration,
     cache: Arc<RwLock<HashMap<(String, String, NaiveDate), f64>>>,
 }
 
@@ -42,6 +45,7 @@ impl CurrencyService {
     pub fn new() -> Self {
         Self {
             client: Client::new(),
+            timeout: std::time::Duration::from_secs(10),
             cache: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -81,6 +85,76 @@ impl CurrencyService {
         cache.insert(cache_key, rate);
 
         Ok(rate)
+    }
+
+    /// Fetches the latest close price for a ticker symbol from Yahoo Finance.
+    /// Caches the result in the historical_prices table for future lookups.
+    /// Returns 0.0 if the price cannot be fetched (logged warning).
+    pub async fn get_price(&self, symbol: &str, pool: &SqlitePool) -> f64 {
+        // 1. Check if we already have any cached price for this symbol
+        let existing = sqlx::query_as::<_, HistoricalPrice>(
+            "SELECT * FROM historical_prices WHERE symbol = ? ORDER BY date DESC LIMIT 1"
+        )
+        .bind(symbol)
+        .fetch_optional(pool)
+        .await;
+
+        if let Ok(Some(hp)) = existing {
+            return hp.close_price;
+        }
+
+        // 2. Fetch from Yahoo Finance
+        let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}", symbol);
+        let response = match self.client.get(&url).timeout(self.timeout).send().await {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("WARN: Failed to fetch price for {}: {}", symbol, e);
+                return 0.0;
+            }
+        };
+
+        if !response.status().is_success() {
+            eprintln!("WARN: Yahoo Finance returned status {} for symbol {}", response.status(), symbol);
+            return 0.0;
+        }
+
+        let yahoo_resp: YahooChartResponse = match response.json().await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("WARN: Failed to parse Yahoo response for {}: {}", symbol, e);
+                return 0.0;
+            }
+        };
+
+        let result = yahoo_resp.chart.result.into_iter().next();
+        let close_prices = match result {
+            Some(r) => r.indicators.quote.close,
+            None => {
+                eprintln!("WARN: No price data for symbol: {}", symbol);
+                return 0.0;
+            }
+        };
+
+        let price = match close_prices.last() {
+            Some(&p) if p > 0.0 => p,
+            _ => {
+                eprintln!("WARN: No valid close price for symbol: {}", symbol);
+                return 0.0;
+            }
+        };
+
+        // 3. Cache in historical_prices table
+        let today = chrono::Utc::now().date_naive();
+        let _ = sqlx::query(
+            "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
+        )
+        .bind(symbol)
+        .bind(today)
+        .bind(price)
+        .execute(pool)
+        .await;
+
+        price
     }
 
     pub fn detect_currency(symbol: &str) -> String {
@@ -132,6 +206,11 @@ mod tests {
         let r2 = svc.get_rate("GBP", "GBP", date2).await.unwrap();
         assert!((r1 - r2).abs() < f64::EPSILON);
     }
+
+    // Integration test for get_price requires:
+    // 1. A real SQLite pool
+    // 2. Network access to Yahoo Finance
+    // Run manually: start server, hit /api/portfolios/<id>/tax-summary with a real asset
 
     #[test]
     fn test_detect_currency_german_stock() {
