@@ -109,7 +109,7 @@ export default function Dashboard({
           </h3>
           <div className="chart-container-inner" style={{ height: '320px', minWidth: 0 }}>
             {mounted && (
-              <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
                 <AreaChart data={history}>
                   <defs>
                     <linearGradient id="colorValue" x1="0" y1="0" x2="0" y2="1">
@@ -150,7 +150,7 @@ export default function Dashboard({
           <h3 style={{ marginBottom: '16px' }}>Asset Allocation</h3>
           <div style={{ flexGrow: 1, position: 'relative', display: 'flex', justifyContent: 'center', alignItems: 'center' }}>
             {mounted && allocationData.length > 0 ? (
-              <ResponsiveContainer width="100%" height={240} minWidth={0}>
+              <ResponsiveContainer width="100%" height={240} minWidth={0} minHeight={0}>
                 <PieChart>
                   <Pie
                     data={allocationData}

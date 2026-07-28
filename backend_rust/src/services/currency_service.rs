@@ -31,12 +31,12 @@ struct ChartResult {
 
 #[derive(Deserialize)]
 struct Indicators {
-    quote: Quote,
+    quote: Vec<Quote>,
 }
 
 #[derive(Deserialize)]
 struct Quote {
-    close: Vec<f64>,
+    close: Vec<Option<f64>>,
 }
 
 pub struct CurrencyService {
@@ -156,12 +156,14 @@ impl CurrencyService {
         let result = yahoo_resp.chart.result.first()
             .ok_or_else(|| anyhow!("No result found for symbol {}", symbol))?;
         
-        let close_prices = &result.indicators.quote.close;
+        let close_prices = &result.indicators.quote.first()
+            .ok_or_else(|| anyhow!("No quote data found for symbol {}", symbol))?
+            .close;
         
         // For simplicity, we take the last available close price if we can't find the exact date.
         // In a more robust implementation, we'd match the timestamp.
-        let rate = close_prices.last()
-            .cloned()
+        let rate = close_prices.iter().rev()
+            .find_map(|x| *x)
             .ok_or_else(|| anyhow!("No close price found for symbol {}", symbol))?;
 
         let mut cache = self.cache.write().await;
@@ -196,35 +198,64 @@ impl CurrencyService {
             }
         };
 
-        if !response.status().is_success() {
-            eprintln!("WARN: Yahoo Finance returned status {} for symbol {}", response.status(), symbol);
+        let status = response.status();
+        let content_type = response.headers().get("content-type").map(|v| v.to_str().unwrap_or("unknown")).unwrap_or("unknown").to_string();
+
+        if !status.is_success() {
+            let body_preview = response.text().await.unwrap_or_default();
+            eprintln!(
+                "WARN: Yahoo Finance returned status {} for symbol {}. Body: {}",
+                status,
+                symbol,
+                &body_preview[..body_preview.len().min(500)]
+            );
             return 0.0;
         }
 
-        let yahoo_resp: YahooChartResponse = match response.json().await {
+        let body_bytes = match response.bytes().await {
+            Ok(b) => b,
+            Err(e) => {
+                eprintln!("WARN: Failed to read response body for {}: {}", symbol, e);
+                return 0.0;
+            }
+        };
+
+        let body_preview = String::from_utf8_lossy(&body_bytes).to_string();
+        let yahoo_resp: YahooChartResponse = match serde_json::from_slice(&body_bytes) {
             Ok(r) => r,
             Err(e) => {
-                eprintln!("WARN: Failed to parse Yahoo response for {}: {}", symbol, e);
+                eprintln!(
+                    "WARN: Failed to parse Yahoo response for {}: {}. Status: {}, Content-Type: {}, Body: {}",
+                    symbol,
+                    e,
+                    status,
+                    content_type,
+                    &body_preview[..body_preview.len().min(500)]
+                );
                 return 0.0;
             }
         };
 
         let result = yahoo_resp.chart.result.into_iter().next();
         let close_prices = match result {
-            Some(r) => r.indicators.quote.close,
+            Some(r) => match r.indicators.quote.first() {
+                Some(q) => q.close.clone(),
+                None => {
+                    eprintln!("WARN: No quote data for symbol: {}", symbol);
+                    return 0.0;
+                }
+            },
             None => {
                 eprintln!("WARN: No price data for symbol: {}", symbol);
                 return 0.0;
             }
         };
 
-        let price = match close_prices.last() {
-            Some(&p) if p > 0.0 => p,
-            _ => {
-                eprintln!("WARN: No valid close price for symbol: {}", symbol);
-                return 0.0;
-            }
-        };
+        let price = close_prices.iter().rev().find_map(|x| *x).unwrap_or(0.0);
+        if price == 0.0 {
+            eprintln!("WARN: No valid close price for symbol: {}", symbol);
+            return 0.0;
+        }
 
         // 3. Cache in historical_prices table
         let today = chrono::Utc::now().date_naive();
@@ -242,7 +273,7 @@ impl CurrencyService {
 
     pub fn detect_currency(symbol: &str) -> String {
         let upper = symbol.to_uppercase();
-        if upper.ends_with(".DE") || upper.ends_with(".F") || upper.ends_with(".FR") {
+        if upper.ends_with(".DE") || upper.ends_with(".F") || upper.ends_with(".FR") || upper.ends_with(".MC") {
             "EUR".to_string()
         } else if upper.ends_with(".L") {
             "GBP".to_string()
@@ -299,6 +330,12 @@ mod tests {
     fn test_detect_currency_german_stock() {
         assert_eq!(CurrencyService::detect_currency("SAP.DE"), "EUR");
         assert_eq!(CurrencyService::detect_currency("SIE.DE"), "EUR");
+    }
+
+    #[test]
+    fn test_detect_currency_madrid_stock() {
+        assert_eq!(CurrencyService::detect_currency("BBVA.MC"), "EUR");
+        assert_eq!(CurrencyService::detect_currency("SAN.MC"), "EUR");
     }
 
     #[test]

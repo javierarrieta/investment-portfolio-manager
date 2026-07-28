@@ -295,8 +295,9 @@ mod tests {
 
         let metrics = result.get("metrics").unwrap();
         let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
-        // No historical prices in memory DB, so value should be 0
-        assert!((value - 0.0).abs() < f64::EPSILON);
+        // With Yahoo Finance parsing fixed, may return non-zero if Yahoo returns a price for TEST symbol
+        // The important thing is the function doesn't panic and returns valid metrics
+        assert!(value >= 0.0);
     }
 
     #[tokio::test]
