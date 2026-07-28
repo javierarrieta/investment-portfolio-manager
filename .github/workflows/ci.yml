@@ -77,24 +77,6 @@ jobs:
           cache-to: type=gha,mode=max
           push: false
 
-  docker-build-backend-arm64:
-    runs-on: investment-portfolio-manager-arm64-runners
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Build backend (arm64)
-        uses: docker/build-push-action@v7
-        with:
-          context: backend_rust
-          file: backend_rust/Dockerfile
-          platforms: linux/arm64
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-          push: false
-
   docker-build-frontend:
     runs-on: ubuntu-latest
     steps:
