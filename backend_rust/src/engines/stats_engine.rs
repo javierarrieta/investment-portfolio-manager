@@ -121,6 +121,21 @@ impl StatsEngine {
             price_map.insert((date, symbol), price);
         }
 
+        let mut rate_cache: HashMap<String, f64> = HashMap::new();
+        for asset in assets {
+            if asset.currency != base_currency {
+                let key = format!("{}->{}", asset.currency, base_currency);
+                if !rate_cache.contains_key(&key) {
+                    let date_utc = Utc.from_utc_datetime(&end_date.and_hms_opt(0, 0, 0).unwrap());
+                    let rate = currency_service
+                        .get_rate(&asset.currency, base_currency, date_utc)
+                        .await
+                        .unwrap_or(1.0);
+                    rate_cache.insert(key, rate);
+                }
+            }
+        }
+
         let mut dates = Vec::new();
         let mut curr = start_date;
         while curr <= end_date {
@@ -159,12 +174,11 @@ impl StatsEngine {
             for asset in assets {
                 let qty = asset_qtys.get(&asset.symbol).cloned().unwrap_or(0.0);
                 let price = price_map.get(&(date, asset.symbol.clone())).cloned().unwrap_or(0.0);
-                
+
                 let mut final_price = price;
                 if asset.currency != base_currency {
-                    // Simple date handling for currency service
-                    let date_utc = Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap());
-                    let rate = currency_service.get_rate(&asset.currency, base_currency, date_utc).await.unwrap_or(1.0);
+                    let key = format!("{}->{}", asset.currency, base_currency);
+                    let rate = rate_cache.get(&key).copied().unwrap_or(1.0);
                     final_price *= rate;
                 }
                 daily_val += qty * final_price;
