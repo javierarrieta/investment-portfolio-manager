@@ -1,12 +1,16 @@
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use std::time::{Duration, Instant};
+use tokio::sync::{RwLock, Mutex};
 use chrono::{DateTime, Utc, NaiveDate};
 use reqwest::Client;
 use serde::Deserialize;
 use anyhow::{Result, anyhow};
 use crate::models::HistoricalPrice;
 use sqlx::sqlite::SqlitePool;
+
+const RATE_LIMIT_DELAY: Duration = Duration::from_millis(200);
+const MAX_RETRIES: usize = 3;
 
 #[derive(Deserialize)]
 struct YahooChartResponse {
@@ -39,15 +43,84 @@ pub struct CurrencyService {
     client: Client,
     timeout: std::time::Duration,
     cache: Arc<RwLock<HashMap<(String, String, NaiveDate), f64>>>,
+    last_request: Mutex<Option<Instant>>,
 }
 
 impl CurrencyService {
     pub fn new() -> Self {
         Self {
-            client: Client::new(),
+            client: Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .user_agent("investment-portfolio-manager/1.0")
+                .build()
+                .unwrap_or_else(|_| Client::new()),
             timeout: std::time::Duration::from_secs(10),
             cache: Arc::new(RwLock::new(HashMap::new())),
+            last_request: Mutex::new(None),
         }
+    }
+
+    async fn fetch_with_retry(&self, url: &str) -> Result<reqwest::Response> {
+        let mut retry_delay = Duration::from_secs(1);
+
+        for attempt in 0..MAX_RETRIES {
+            {
+                let last = self.last_request.lock().await;
+                if let Some(instant) = *last {
+                    let elapsed = instant.elapsed();
+                    if elapsed < RATE_LIMIT_DELAY {
+                        let wait = RATE_LIMIT_DELAY - elapsed;
+                        drop(last);
+                        tokio::time::sleep(wait).await;
+                    }
+                }
+            }
+
+            let response = self.client.get(url).timeout(self.timeout).send().await;
+
+            {
+                let mut last = self.last_request.lock().await;
+                *last = Some(Instant::now());
+            }
+
+            match response {
+                Ok(resp) if resp.status() == 429 => {
+                    eprintln!(
+                        "WARN: Yahoo Finance returned 429 (attempt {}/{}), retrying in {:?}",
+                        attempt + 1,
+                        MAX_RETRIES,
+                        retry_delay
+                    );
+                    tokio::time::sleep(retry_delay).await;
+                    retry_delay *= 2;
+                    continue;
+                }
+                Ok(resp) => return Ok(resp),
+                Err(e) => {
+                    if attempt < MAX_RETRIES - 1 {
+                        eprintln!(
+                            "WARN: Request to {} failed (attempt {}/{}): {}, retrying in {:?}",
+                            url,
+                            attempt + 1,
+                            MAX_RETRIES,
+                            e,
+                            retry_delay
+                        );
+                        tokio::time::sleep(retry_delay).await;
+                        retry_delay *= 2;
+                        continue;
+                    }
+                    return Err(anyhow!(
+                        "Request to {} failed after {} retries: {}",
+                        url,
+                        MAX_RETRIES,
+                        e
+                    ));
+                }
+            }
+        }
+
+        Err(anyhow!("Max retries exceeded for {}", url))
     }
 
     pub async fn get_rate(&self, from_curr: &str, to_curr: &str, date: DateTime<Utc>) -> Result<f64> {
@@ -68,9 +141,19 @@ impl CurrencyService {
         let symbol = format!("{}={}", from_curr, to_curr);
         let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}", symbol);
 
-        let response = self.client.get(&url).send().await?.json::<YahooChartResponse>().await?;
+        let response = self.fetch_with_retry(&url).await?;
+
+        if !response.status().is_success() {
+            return Err(anyhow!(
+                "Yahoo Finance returned status {} for symbol {}",
+                response.status(),
+                symbol
+            ));
+        }
+
+        let yahoo_resp: YahooChartResponse = response.json().await?;
         
-        let result = response.chart.result.first()
+        let result = yahoo_resp.chart.result.first()
             .ok_or_else(|| anyhow!("No result found for symbol {}", symbol))?;
         
         let close_prices = &result.indicators.quote.close;
@@ -105,7 +188,7 @@ impl CurrencyService {
 
         // 2. Fetch from Yahoo Finance
         let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}", symbol);
-        let response = match self.client.get(&url).timeout(self.timeout).send().await {
+        let response = match self.fetch_with_retry(&url).await {
             Ok(resp) => resp,
             Err(e) => {
                 eprintln!("WARN: Failed to fetch price for {}: {}", symbol, e);
