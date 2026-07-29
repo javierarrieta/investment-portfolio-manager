@@ -13,7 +13,9 @@
     "generate-types": "openapi-typescript ../docs/openapi/openapi.json --output src/types/api.d.ts"
   },
   "dependencies": {
+    "@types/papaparse": "^5.5.2",
     "lucide-react": "^1.21.0",
+    "papaparse": "^5.5.4",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "recharts": "^3.8.1"

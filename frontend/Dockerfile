@@ -17,11 +17,14 @@ RUN npm run build
 # --- Stage 2: Serve with nginx ---
 FROM nginx:1.27-alpine AS runtime
 
-# Remove default nginx site
-RUN rm -rf /usr/share/nginx/html/*
+# Remove default nginx site and config
+RUN rm -rf /usr/share/nginx/html/* /etc/nginx/conf.d/default.conf
 
 # Copy built frontend assets from builder stage
 COPY --from=builder /build/dist /usr/share/nginx/html
+
+# Copy custom nginx config (proxies /api and /api-docs to the backend sidecar)
+COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 EXPOSE 80
 
