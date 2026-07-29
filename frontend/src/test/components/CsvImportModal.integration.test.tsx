@@ -1,4 +1,4 @@
-import { describe, test, expect, beforeEach } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { setupServer } from 'msw/node';
 import { handlers } from '../mocks/handlers';
@@ -8,6 +8,10 @@ const server = setupServer(...handlers);
 
 beforeEach(() => {
   server.listen({ onUnhandledRequest: 'bypass' });
+});
+
+afterEach(() => {
+  server.close();
 });
 
 describe('CsvImportModal integration', () => {
