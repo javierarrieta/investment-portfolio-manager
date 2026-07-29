@@ -1,5 +1,6 @@
 import { http, HttpResponse } from 'msw'
 import type { Portfolio, Asset } from '../../types'
+import type { AssetType } from '../../types'
 
 export const handlers = [
   http.get('/api/portfolios', () => {
@@ -87,26 +88,26 @@ export const handlers = [
       portfolio_id: Number(portfolioId),
       symbol: body.symbol.toUpperCase(),
       name: body.name,
-      asset_type: body.asset_type.toUpperCase(),
+      asset_type: body.asset_type.toUpperCase() as AssetType,
       sector: undefined,
       currency: body.currency || 'USD',
       transactions: []
     }
     return HttpResponse.json(newAsset, { status: 201 })
-  })
+  }),
   http.post('/api/portfolios/:portfolioId/assets/:assetId/transactions', async ({ params, request }) => {
-    const { portfolioId, assetId } = params
+    const { assetId } = params
     const body = (await request.json()) as { type: string; quantity: number; price: number; fee: number; date: string }
     return HttpResponse.json({
       id: 1000,
       asset_id: Number(assetId),
-      r#type: body.type.toUpperCase(),
+      type: body.type.toUpperCase(),
       quantity: body.quantity,
       price: body.price,
       fee: body.fee,
       date: body.date
     }, { status: 201 })
-  })
+  }),
   http.all('*', () => {
     return HttpResponse.json({ error: 'not implemented' }, { status: 501 })
   })

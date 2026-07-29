@@ -47,10 +47,23 @@ export function detectDateFormat(
 ): { format: string; ambiguous: boolean } {
   for (const row of sampleRows) {
     for (const cell of row) {
+      const trimmed = cell.trim();
       for (const df of DATE_FORMATS) {
-        if (df.regex.test(cell.trim())) {
+        if (df.regex.test(trimmed)) {
+          if (df.format === 'MM/DD/YYYY' || df.format === 'DD/MM/YYYY' ||
+              df.format === 'MM/DD/YYYY HH:MM' || df.format === 'DD/MM/YYYY HH:MM') {
+            const parts = trimmed.split(/[/\s]/).filter(p => /^\d{2}$/.test(p));
+            if (parts.length >= 2) {
+              const first = parseInt(parts[0], 10);
+              if (first > 12) {
+                return { format: df.format.startsWith('DD') ? df.format : 'DD/MM/YYYY', ambiguous: true };
+              }
+              return { format: df.format.startsWith('MM') ? df.format : 'MM/DD/YYYY', ambiguous: true };
+            }
+          }
           const isAmbiguous =
-            df.format === 'MM/DD/YYYY' || df.format === 'DD/MM/YYYY';
+            df.format === 'MM/DD/YYYY' || df.format === 'DD/MM/YYYY' ||
+            df.format === 'MM/DD/YYYY HH:MM' || df.format === 'DD/MM/YYYY HH:MM';
           return { format: df.format, ambiguous: isAmbiguous };
         }
       }

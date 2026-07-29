@@ -4,9 +4,8 @@ import Papa from 'papaparse';
 import { Asset } from '../types';
 import { detectColumns, detectDateFormat } from '../utils/csvParser';
 import { validateCsvFile } from '../utils/csvValidator';
-import type { ColumnMapping, CsvImportResult } from '../types/csv';
-import type { ValidationReport, ValidatedRow } from '../utils/csvValidator';
-import type { CsvTransactionField } from '../types/csv';
+import type { ColumnMapping, CsvImportResult, CsvTransactionField } from '../types/csv';
+import type { ValidationReport } from '../utils/csvValidator';
 
 interface CsvImportModalProps {
   portfolioId: number;
@@ -16,16 +15,6 @@ interface CsvImportModalProps {
 }
 
 type ImportStep = 'upload' | 'map' | 'validate' | 'confirm' | 'results';
-
-interface MappedRow {
-  date: string;
-  symbol: string;
-  type: 'BUY' | 'SELL';
-  quantity: number;
-  price: number;
-  fee: number;
-  raw: Record<string, string>;
-}
 
 export default function CsvImportModal({ portfolioId, assets, onClose, onImportComplete }: CsvImportModalProps) {
   const [step, setStep] = useState<ImportStep>('upload');
@@ -37,6 +26,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [importResults, setImportResults] = useState<CsvImportResult[]>([]);
   const [overrideFormat, setOverrideFormat] = useState<string>('');
+  const [isImporting, setIsImporting] = useState(false);
 
   const portfolioSymbols = assets.map((a) => a.symbol);
 
@@ -52,6 +42,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
         const parsedHeaders = results.meta.fields ?? [];
         setHeaders(parsedHeaders);
         setCsvRows(data);
+        setStep('upload');
 
         const cols = detectColumns(parsedHeaders);
         setColumnMapping(cols);
@@ -76,6 +67,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
   const handleConfirmImport = useCallback(async () => {
     if (!validationReport) return;
 
+    setIsImporting(true);
     const results: CsvImportResult[] = [];
 
     for (const row of validationReport.validatedRows) {
@@ -110,12 +102,17 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
         }
       }
 
+      const parsedDate = new Date(row.date);
+      const isoDate = isNaN(parsedDate.getTime())
+        ? new Date(row.date + 'T00:00:00Z').toISOString()
+        : parsedDate.toISOString();
+
       const txPayload = {
         type: row.type,
         quantity: row.quantity,
         price: row.price,
         fee: row.fee,
-        date: row.date,
+        date: isoDate,
       };
 
       try {
@@ -138,6 +135,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
 
     setImportResults(results);
     setStep('results');
+    setIsImporting(false);
 
     const hasSuccess = results.some((r) => r.success);
     if (hasSuccess) {
@@ -154,9 +152,6 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
 
   const totalRows = csvRows.length;
   const validCount = validationReport?.validRows ?? 0;
-  const errorCount = validationReport?.totalRows
-    ? validationReport.totalRows - (validationReport?.totalRows - validationReport.errorRows.length > validationReport.totalRows ? 0 : validationReport.totalRows - validationReport.validRows)
-    : 0;
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
@@ -170,7 +165,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
 
         {/* Step indicators */}
         <div style={{ display: 'flex', gap: '8px', marginBottom: '24px' }}>
-          {(['upload', 'map', 'validate', 'confirm', 'results'] as ImportStep[]).map((s, i) => (
+          {(['upload', 'map', 'validate', 'confirm', 'results'] as ImportStep[]).map((s) => (
             <div key={s} style={{ flex: 1, height: '4px', borderRadius: '2px', background: step === s ? 'var(--color-primary)' : step > s ? 'var(--color-success)' : 'var(--border-color)' }} />
           ))}
         </div>
@@ -342,7 +337,9 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
             </div>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button onClick={() => setStep('validate')} className="btn btn-secondary">Back</button>
-              <button onClick={handleConfirmImport} className="btn btn-primary">Confirm and Import</button>
+              <button onClick={handleConfirmImport} className="btn btn-primary" disabled={isImporting}>
+                {isImporting ? 'Importing...' : 'Confirm and Import'}
+              </button>
             </div>
           </div>
         )}

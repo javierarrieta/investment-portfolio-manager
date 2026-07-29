@@ -1,57 +1,46 @@
-import type { ColumnMapping, CsvValidationRow, CsvImportResult } from '../types/csv';
+import type { ColumnMapping, CsvValidationRow } from '../types/csv';
+
+interface DateFormat {
+  regex: RegExp;
+  parse: (s: string) => Date;
+}
+
+const DATE_FORMATS: DateFormat[] = [
+  { regex: /^\d{4}-\d{2}-\d{2}$/, parse: (s) => new Date(s + 'T00:00:00Z') },
+  { regex: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/, parse: (s) => new Date(s.replace(' ', 'T') + ':00Z') },
+  { regex: /^\d{2}\/\d{2}\/\d{4}$/, parse: (s) => {
+    const parts = s.split('/');
+    const first = parseInt(parts[0], 10);
+    if (first > 12) {
+      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T00:00:00Z`);
+    }
+    return new Date(`${parts[2]}-${parts[0]}-${parts[1]}T00:00:00Z`);
+  }},
+  { regex: /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/, parse: (s) => {
+    const [datePart, timePart] = s.split(' ');
+    const parts = datePart.split('/');
+    const first = parseInt(parts[0], 10);
+    if (first > 12) {
+      return new Date(`${parts[2]}-${parts[1]}-${parts[0]}T${timePart}:00Z`);
+    }
+    return new Date(`${parts[2]}-${parts[0]}-${parts[1]}T${timePart}:00Z`);
+  }},
+];
 
 function isValidDate(dateStr: string): boolean {
   const trimmed = dateStr.trim();
   if (!trimmed) return false;
-
-  const formats = [
-    { regex: /^\d{4}-\d{2}-\d{2}$/, parse: (s: string) => new Date(s + 'T00:00:00Z') },
-    { regex: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/, parse: (s: string) => new Date(s.replace(' ', 'T') + ':00Z') },
-    { regex: /^\d{2}\/\d{2}\/\d{4}$/, parse: (s: string) => {
-      const parts = s.split('/');
-      return new Date(`${parts[2]}-${parts[0]}-${parts[1]}T00:00:00Z`);
-    }},
-    { regex: /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/, parse: (s: string) => {
-      const [datePart, timePart] = s.split(' ');
-      const parts = datePart.split('/');
-      return new Date(`${parts[2]}-${parts[0]}-${parts[1]}T${timePart}:00Z`);
-    }},
-  ];
-
-  for (const fmt of formats) {
-    if (fmt.regex.test(trimmed)) {
-      const d = fmt.parse(trimmed);
-      return !isNaN(d.getTime());
-    }
-  }
-
-  return false;
+  return DATE_FORMATS.some((fmt) => fmt.regex.test(trimmed) && !isNaN(fmt.parse(trimmed).getTime()));
 }
 
 function parseDate(dateStr: string): Date | null {
   const trimmed = dateStr.trim();
-
-  const formats = [
-    { regex: /^\d{4}-\d{2}-\d{2}$/, parse: (s: string) => new Date(s + 'T00:00:00Z') },
-    { regex: /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/, parse: (s: string) => new Date(s.replace(' ', 'T') + ':00Z') },
-    { regex: /^\d{2}\/\d{2}\/\d{4}$/, parse: (s: string) => {
-      const parts = s.split('/');
-      return new Date(`${parts[2]}-${parts[0]}-${parts[1]}T00:00:00Z`);
-    }},
-    { regex: /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/, parse: (s: string) => {
-      const [datePart, timePart] = s.split(' ');
-      const parts = datePart.split('/');
-      return new Date(`${parts[2]}-${parts[0]}-${parts[1]}T${timePart}:00Z`);
-    }},
-  ];
-
-  for (const fmt of formats) {
+  for (const fmt of DATE_FORMATS) {
     if (fmt.regex.test(trimmed)) {
       const d = fmt.parse(trimmed);
       if (!isNaN(d.getTime())) return d;
     }
   }
-
   return null;
 }
 
@@ -208,7 +197,7 @@ export interface ValidationReport {
 export function validateCsvRow(
   rowData: Record<string, string>,
   columnMapping: ColumnMapping,
-  portfolioSymbols: string[]
+  rowNum: number
 ): ValidatedRow {
   const getMapped = (field: string): string | undefined => {
     for (const [idx, mappedField] of Object.entries(columnMapping)) {
@@ -228,21 +217,23 @@ export function validateCsvRow(
   const priceRaw = getMapped('price') ?? '';
   const feeRaw = getMapped('fee');
 
-  const row = parseInt(Object.keys(rowData)[0] ?? '0', 10);
   const allErrors: CsvValidationRow[] = [];
 
-  allErrors.push(...validateDate(dateRaw, row));
-  allErrors.push(...validateSymbol(symbolRaw, row));
-  allErrors.push(...validateType(typeRaw, row));
-  allErrors.push(...validateQuantity(qtyRaw, row));
-  allErrors.push(...validatePrice(priceRaw, row));
-  allErrors.push(...validateFee(feeRaw, row));
+  allErrors.push(...validateDate(dateRaw, rowNum));
+  allErrors.push(...validateSymbol(symbolRaw, rowNum));
+  allErrors.push(...validateType(typeRaw, rowNum));
+  allErrors.push(...validateQuantity(qtyRaw, rowNum));
+  allErrors.push(...validatePrice(priceRaw, rowNum));
+  allErrors.push(...validateFee(feeRaw, rowNum));
+
+  const upperType = typeRaw.trim().toUpperCase();
+  const normalizedType: 'BUY' | 'SELL' = (upperType === 'SELL' ? 'SELL' : 'BUY');
 
   return {
-    row,
+    row: rowNum,
     date: dateRaw,
     symbol: symbolRaw.trim(),
-    type: (typeRaw.trim().toUpperCase() as 'BUY' | 'SELL') || 'BUY',
+    type: normalizedType,
     quantity: parseFloat(qtyRaw) || 0,
     price: parseFloat(priceRaw) || 0,
     fee: parseFloat(feeRaw ?? '0') || 0,
@@ -260,8 +251,8 @@ export function validateCsvFile(
   const unknownSymbols = new Set<string>();
   let validCount = 0;
 
-  for (const rowData of rows) {
-    const validated = validateCsvRow(rowData, columnMapping, portfolioSymbols);
+  for (let i = 0; i < rows.length; i++) {
+    const validated = validateCsvRow(rows[i], columnMapping, i + 1);
 
     if (validated.errors.length > 0) {
       allErrors.push(...validated.errors);
