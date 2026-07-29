@@ -208,7 +208,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
             >
               <Upload size={32} style={{ marginBottom: '12px', color: 'var(--text-secondary)' }} />
               <p style={{ color: 'var(--text-secondary)' }}>Click to select or drag and drop a CSV file</p>
-              <input id="csv-file-input" type="file" accept=".csv" aria-label="CSV file" onChange={handleFileUpload} style={{ display: 'none' }} />
+              <input id="csv-file-input" type="file" accept=".csv" aria-label="Upload CSV file" onChange={handleFileUpload} style={{ display: 'none' }} />
             </div>
             {csvRows.length > 0 && (
               <div style={{ marginTop: '16px' }}>
