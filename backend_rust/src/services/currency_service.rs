@@ -176,11 +176,13 @@ impl CurrencyService {
     /// Caches the result in the historical_prices table for future lookups.
     /// Returns 0.0 if the price cannot be fetched (logged warning).
     pub async fn get_price(&self, symbol: &str, pool: &SqlitePool) -> f64 {
-        // 1. Check if we already have any cached price for this symbol
+        // 1. Check if we have a cached price for today
+        let today = chrono::Utc::now().date_naive();
         let existing = sqlx::query_as::<_, HistoricalPrice>(
-            "SELECT * FROM historical_prices WHERE symbol = ? ORDER BY date DESC LIMIT 1"
+            "SELECT * FROM historical_prices WHERE symbol = ? AND date = ?"
         )
         .bind(symbol)
+        .bind(today)
         .fetch_optional(pool)
         .await;
 
