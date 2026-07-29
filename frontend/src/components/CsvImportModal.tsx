@@ -2,7 +2,7 @@ import React, { useState, useCallback } from 'react';
 import { X, Upload, ChevronRight, ChevronLeft, CheckCircle, XCircle, AlertTriangle } from 'lucide-react';
 import Papa from 'papaparse';
 import { Asset } from '../types';
-import { detectColumns, detectDateFormat } from '../utils/csvParser';
+import { detectColumns, detectDateFormat, dateToISO } from '../utils/csvParser';
 import { validateCsvFile } from '../utils/csvValidator';
 import type { ColumnMapping, CsvImportResult, CsvTransactionField } from '../types/csv';
 import type { ValidationReport } from '../utils/csvValidator';
@@ -42,7 +42,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
         const parsedHeaders = results.meta.fields ?? [];
         setHeaders(parsedHeaders);
         setCsvRows(data);
-        setStep('upload');
+        setStep('map');
 
         const cols = detectColumns(parsedHeaders);
         setColumnMapping(cols);
@@ -69,6 +69,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
 
     setIsImporting(true);
     const results: CsvImportResult[] = [];
+    const importedKeys = new Set<string>();
 
     for (const row of validationReport.validatedRows) {
       if (row.errors.length > 0) {
@@ -91,21 +92,46 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
             }),
           });
           if (!res.ok) {
-            results.push({ row: row.row, success: false, error: `Failed to create asset for ${row.symbol}` });
-            continue;
+            const existing = assets.find((a) => a.symbol.toUpperCase() === row.symbol.toUpperCase());
+            if (existing) {
+              asset = existing;
+            } else {
+              try {
+                const portfolioRes = await fetch(`/api/portfolios/${portfolioId}`);
+                if (portfolioRes.ok) {
+                  const portfolio = (await portfolioRes.json()) as { assets: Asset[] };
+                  const found = portfolio.assets.find((a) => a.symbol.toUpperCase() === row.symbol.toUpperCase());
+                  if (found) {
+                    asset = found;
+                  }
+                }
+              } catch {
+                // ignore
+              }
+            }
+            if (!asset) {
+              results.push({ row: row.row, success: false, error: `Failed to create asset for ${row.symbol}` });
+              continue;
+            }
+          } else {
+            const assetData = await res.json();
+            asset = assetData as Asset;
           }
-          const assetData = await res.json();
-          asset = assetData as Asset;
         } catch {
           results.push({ row: row.row, success: false, error: `Failed to create asset for ${row.symbol}` });
           continue;
         }
       }
 
-      const parsedDate = new Date(row.date);
-      const isoDate = isNaN(parsedDate.getTime())
-        ? new Date(row.date + 'T00:00:00Z').toISOString()
-        : parsedDate.toISOString();
+      const effectiveFormat = overrideFormat || dateFormat;
+      const isoDate = dateToISO(row.date, effectiveFormat);
+
+      const dedupKey = `${isoDate}-${asset.id}-${row.type}-${row.quantity}-${row.price}-${row.fee}`;
+      if (importedKeys.has(dedupKey)) {
+        results.push({ row: row.row, success: false, error: 'Duplicate transaction skipped' });
+        continue;
+      }
+      importedKeys.add(dedupKey);
 
       const txPayload = {
         type: row.type,
@@ -316,8 +342,8 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
               <button onClick={() => setStep('map')} className="btn btn-secondary">
                 <ChevronLeft size={16} /> Back to Mapping
               </button>
-              <button onClick={() => setStep('confirm')} className="btn btn-primary" disabled={validationReport.totalRows - validationReport.validRows > 0}>
-                Import {validationReport.validRows} Transactions
+              <button onClick={() => setStep('confirm')} className="btn btn-primary">
+                Import {validationReport.validRows} Transactions {validationReport.totalRows - validationReport.validRows > 0 && <span style={{ color: 'var(--color-warning)', fontSize: '0.75rem' }}>({validationReport.totalRows - validationReport.validRows} row(s) with errors will be skipped)</span>}
               </button>
             </div>
           </div>

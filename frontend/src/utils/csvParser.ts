@@ -72,3 +72,34 @@ export function detectDateFormat(
 
   return { format: 'YYYY-MM-DD', ambiguous: false };
 }
+
+export function dateToISO(dateStr: string, format: string): string {
+  const trimmed = dateStr.trim();
+  if (!trimmed) return '';
+
+  if (format === 'YYYY-MM-DD') {
+    return new Date(trimmed + 'T00:00:00Z').toISOString();
+  }
+  if (format === 'YYYY-MM-DD HH:MM') {
+    return new Date(trimmed.replace(' ', 'T') + ':00Z').toISOString();
+  }
+  const slashParts = trimmed.split(/\s/);
+  const datePart = slashParts[0];
+  const timePart = slashParts[1] ?? '';
+  const mm = datePart.split('/');
+  if (mm.length !== 3) return new Date(trimmed).toISOString();
+  const [a, b, year] = mm.map((p) => parseInt(p, 10));
+  let m: number;
+  let d: number;
+  if (format.startsWith('DD/MM')) {
+    m = b;
+    d = a;
+  } else {
+    m = a;
+    d = b;
+  }
+  if (!timePart) {
+    return new Date(`${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T00:00:00Z`).toISOString();
+  }
+  return new Date(`${year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}T${timePart}:00Z`).toISOString();
+}
