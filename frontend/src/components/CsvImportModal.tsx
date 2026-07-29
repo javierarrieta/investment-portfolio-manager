@@ -3,7 +3,9 @@ import { X, Upload, ChevronRight, ChevronLeft, CheckCircle, XCircle, AlertTriang
 import Papa from 'papaparse';
 import { Asset } from '../types';
 import { detectColumns, detectDateFormat } from '../utils/csvParser';
-import { validateCsvFile, type ColumnMapping, type CsvImportResult, type ValidationReport, type ValidatedRow } from '../utils/csvValidator';
+import { validateCsvFile } from '../utils/csvValidator';
+import type { ColumnMapping, CsvImportResult } from '../types/csv';
+import type { ValidationReport, ValidatedRow } from '../utils/csvValidator';
 import type { CsvTransactionField } from '../types/csv';
 
 interface CsvImportModalProps {
@@ -45,7 +47,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
-      complete: (results) => {
+      complete: (results: Papa.ParseResult<Record<string, string>>) => {
         const data = results.data as Record<string, string>[];
         const parsedHeaders = results.meta.fields ?? [];
         setHeaders(parsedHeaders);
@@ -54,7 +56,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
         const cols = detectColumns(parsedHeaders);
         setColumnMapping(cols);
 
-        const dateResult = detectDateFormat(data.slice(0, 5).map((row) => parsedHeaders.map((h) => row[h] ?? '')));
+        const dateResult = detectDateFormat(data.slice(0, 5).map((row) => parsedHeaders.map((h: string) => (row[h] ?? ''))));
         setDateFormat(dateResult.format);
         setDateAmbiguous(dateResult.ambiguous);
       },
@@ -62,7 +64,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
   }, []);
 
   const handleColumnChange = useCallback((colIdx: number, field: CsvTransactionField) => {
-    setColumnMapping((prev) => ({ ...prev, [colIdx]: field }));
+    setColumnMapping((prev: ColumnMapping) => ({ ...prev, [colIdx]: field }));
   }, []);
 
   const handleValidate = useCallback(() => {

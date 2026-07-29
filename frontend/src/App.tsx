@@ -383,6 +383,7 @@ export default function App() {
                 onDeleteAsset={handleDeleteAsset}
                 onAddTransaction={handleAddTransaction}
                 onDeleteTransaction={handleDeleteTransaction}
+                onFetchPortfolioData={() => fetchPortfolioData(selectedId)}
                 strategy={strategy}
                 setStrategy={setStrategy}
                 thresholdDays={thresholdDays}

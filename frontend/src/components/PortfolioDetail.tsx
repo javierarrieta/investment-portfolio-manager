@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
+import { Plus, Trash2, ChevronDown, ChevronUp, Upload } from 'lucide-react';
 import { formatCurrency, formatPercent } from '../utils/formatters';
 import { 
   Portfolio, 
@@ -9,6 +9,7 @@ import {
   TransactionType, 
   AssetType
 } from '../types';
+import CsvImportModal from './CsvImportModal';
 
 function detectCurrencyFromSymbol(symbol: string): string {
   const s = symbol.toUpperCase();
@@ -29,6 +30,7 @@ interface PortfolioDetailProps {
   taxSummary: TaxSummary;
   onAddAsset: (assetData: Partial<Asset>) => Promise<void>;
   onDeleteAsset: (assetId: number) => Promise<void>;
+  onFetchPortfolioData: () => Promise<void>;
   onAddTransaction: (assetId: number, txData: Partial<Transaction>) => Promise<void>;
   strategy: string;
   setStrategy: (strategy: string) => void;
@@ -40,7 +42,8 @@ export default function PortfolioDetail({
   portfolio, 
   taxSummary, 
   onAddAsset, 
-  onDeleteAsset, 
+  onDeleteAsset,
+  onFetchPortfolioData, 
   onAddTransaction, 
   strategy, 
   setStrategy, 
@@ -50,6 +53,7 @@ export default function PortfolioDetail({
   const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
   const [showAssetModal, setShowAssetModal] = useState(false);
   const [showTxModal, setShowTxModal] = useState(false);
+  const [showImportModal, setShowImportModal] = useState(false);
   
   // Forms State
   const [assetForm, setAssetForm] = useState<Partial<Asset>>({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD' });
@@ -134,6 +138,9 @@ export default function PortfolioDetail({
             <Plus size={16} /> Log Transaction
           </button>
         )}
+        <button onClick={() => setShowImportModal(true)} className="btn btn-primary">
+          <Upload size={16} /> Import CSV
+        </button>
       </div>
 
       {/* Assets Table */}
@@ -337,7 +344,15 @@ export default function PortfolioDetail({
       )}
 
       {/* LOG TRANSACTION MODAL */}
-      {showTxModal && (
+      {showImportModal && (
+          <CsvImportModal
+            portfolioId={portfolio.id}
+            assets={portfolio.assets || []}
+            onClose={() => setShowImportModal(false)}
+            onImportComplete={onFetchPortfolioData}
+          />
+        )}
+        {showTxModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
           <div className="glass-card" style={{ padding: '32px', width: '450px', background: '#121929' }}>
             <h3 style={{ marginBottom: '20px' }}>Log Buy/Sell Transaction</h3>
