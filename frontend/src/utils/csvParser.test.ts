@@ -40,6 +40,20 @@ describe('detectColumns', () => {
     const result = detectColumns([]);
     expect(Object.keys(result)).toHaveLength(0);
   });
+
+  test('does not duplicate mappings for repeated field types', () => {
+    const result = detectColumns(['date', 'txn_date', 'symbol', 'ticker', 'qty']);
+    const values = Object.values(result).filter((v) => v !== null);
+    const uniqueValues = new Set(values);
+    expect(uniqueValues.size).toBe(values.length);
+  });
+
+  test('maps first occurrence of duplicated field type', () => {
+    const result = detectColumns(['date', 'datetime', 'symbol']);
+    expect(result[0]).toBe('date');
+    expect(result[1]).toBeNull();
+    expect(result[2]).toBe('symbol');
+  });
 });
 
 describe('detectDateFormat', () => {

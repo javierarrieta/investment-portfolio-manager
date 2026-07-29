@@ -21,19 +21,18 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
   const [csvRows, setCsvRows] = useState<Record<string, string>[]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
+  const [constants, setConstants] = useState<Record<string, string>>({});
   const [dateFormat, setDateFormat] = useState<string>('YYYY-MM-DD');
   const [dateAmbiguous, setDateAmbiguous] = useState(false);
   const [validationReport, setValidationReport] = useState<ValidationReport | null>(null);
   const [importResults, setImportResults] = useState<CsvImportResult[]>([]);
   const [overrideFormat, setOverrideFormat] = useState<string>('');
+  const [dragActive, setDragActive] = useState(false);
   const [isImporting, setIsImporting] = useState(false);
 
   const portfolioSymbols = assets.map((a) => a.symbol);
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+  const processFile = useCallback((file: File) => {
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
@@ -54,15 +53,49 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
     });
   }, []);
 
+  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    processFile(file);
+  }, [processFile]);
+
+  const handleDragOver = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  }, []);
+
+  const handleDragEnter = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      processFile(file);
+    }
+  }, [processFile]);
+
   const handleColumnChange = useCallback((colIdx: number, field: CsvTransactionField) => {
-    setColumnMapping((prev: ColumnMapping) => ({ ...prev, [colIdx]: field }));
+    setColumnMapping((prev) => ({ ...prev, [colIdx]: field }));
   }, []);
 
   const handleValidate = useCallback(() => {
-    const report = validateCsvFile(csvRows, columnMapping, portfolioSymbols);
+    const report = validateCsvFile(csvRows, columnMapping, portfolioSymbols, constants);
     setValidationReport(report);
     setStep('validate');
-  }, [csvRows, columnMapping, portfolioSymbols]);
+  }, [csvRows, columnMapping, portfolioSymbols, constants]);
 
   const handleConfirmImport = useCallback(async () => {
     if (!validationReport) return;
@@ -178,6 +211,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
 
   const totalRows = csvRows.length;
   const validCount = validationReport?.validRows ?? 0;
+  const allFields: CsvTransactionField[] = ['date', 'symbol', 'type', 'quantity', 'price', 'fee'];
 
   return (
     <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
@@ -203,7 +237,20 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
               Upload a CSV file of transactions. The first row will be treated as headers.
             </p>
             <div
-              style={{ border: '2px dashed var(--border-color)', borderRadius: '12px', padding: '48px', textAlign: 'center', cursor: 'pointer' }}
+              style={{
+                border: '2px dashed var(--border-color)',
+                borderRadius: '12px',
+                padding: '48px',
+                textAlign: 'center',
+                cursor: 'pointer',
+                background: dragActive ? 'rgba(0,180,100,0.05)' : 'transparent',
+                borderColor: dragActive ? 'var(--color-success)' : 'var(--border-color)',
+                transition: 'border-color 0.2s, background 0.2s',
+              }}
+              onDragOver={handleDragOver}
+              onDragEnter={handleDragEnter}
+              onDragLeave={handleDragLeave}
+              onDrop={handleDrop}
               onClick={() => document.getElementById('csv-file-input')?.click()}
             >
               <Upload size={32} style={{ marginBottom: '12px', color: 'var(--text-secondary)' }} />
@@ -238,40 +285,121 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
                     </tr>
                   </thead>
                   <tbody>
-                    {mappedColumns.map(([idx, field]) => (
-                      <tr key={idx}>
-                        <td style={{ padding: '8px', borderBottom: '1px solid var(--border-color)' }}>{headers[parseInt(idx, 10)]}</td>
-                        <td style={{ padding: '8px', borderBottom: '1px solid var(--border-color)', color: 'var(--color-primary)', textTransform: 'uppercase' }}>{field}</td>
-                      </tr>
-                    ))}
+                     {mappedColumns.map(([idx, field]) => {
+                       const availableFieldOptions = allFields.filter(
+                         (f) => {
+                           if (f === field) return true;
+                           const used = Object.entries(columnMapping)
+                             .filter(([i]) => i !== idx)
+                             .map(([, f]) => f)
+                             .filter((f): f is CsvTransactionField => f !== null);
+                           return !used.includes(f);
+                         }
+                       );
+                       return (
+                         <tr key={idx}>
+                           <td style={{ padding: '8px', borderBottom: '1px solid var(--border-color)' }}>{headers[parseInt(idx, 10)]}</td>
+                           <td style={{ padding: '8px', borderBottom: '1px solid var(--border-color)' }}>
+                             <select
+                               value={field}
+                               onChange={(e) => {
+                                 const val = e.target.value as CsvTransactionField;
+                                 handleColumnChange(parseInt(idx, 10), val === '' ? null : val);
+                               }}
+                               className="form-control"
+                               style={{ width: 'auto' }}
+                             >
+                               {availableFieldOptions.map((f) => (
+                                 <option key={f} value={f}>
+                                   {f === 'type' ? 'Type (BUY/SELL)' : f.charAt(0).toUpperCase() + f.slice(1)}
+                                 </option>
+                               ))}
+                               <option value="">{field} (clear)</option>
+                             </select>
+                           </td>
+                         </tr>
+                       );
+                     })}
                   </tbody>
                 </table>
               </div>
             )}
-            {unmappedColumns.length > 0 && (
-              <div style={{ marginBottom: '16px' }}>
-                <h4 style={{ marginBottom: '8px' }}>Unmapped Columns</h4>
-                {unmappedColumns.map(([idx]) => (
-                  <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
-                    <span style={{ color: 'var(--text-secondary)' }}>{headers[parseInt(idx, 10)]}</span>
-                    <select
-                      value=""
-                      onChange={(e) => handleColumnChange(parseInt(idx, 10), e.target.value as CsvTransactionField)}
-                      className="form-control"
-                      style={{ width: 'auto' }}
-                    >
-                      <option value="">Skip this column</option>
-                      <option value="date">Date</option>
-                      <option value="symbol">Symbol</option>
-                      <option value="type">Type (BUY/SELL)</option>
-                      <option value="quantity">Quantity</option>
-                      <option value="price">Price</option>
-                      <option value="fee">Fee</option>
-                    </select>
+{unmappedColumns.length > 0 && (
+           <div style={{ marginBottom: '16px' }}>
+             <h4 style={{ marginBottom: '8px' }}>Unmapped Columns</h4>
+             {unmappedColumns.map(([idx]) => {
+               const usedFields = new Set(
+                 Object.entries(columnMapping)
+                   .filter(([i]) => i !== idx)
+                   .map(([, f]) => f)
+                   .filter((f): f is CsvTransactionField => f !== null)
+               );
+               const availableFieldOptions = allFields.filter(
+                 (f) => !usedFields.has(f)
+               );
+               return (
+                 <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                   <span style={{ color: 'var(--text-secondary)' }}>{headers[parseInt(idx, 10)]}</span>
+                   <select
+                     value=""
+                     onChange={(e) => {
+                       const val = e.target.value as CsvTransactionField;
+                       handleColumnChange(parseInt(idx, 10), val === '' ? null : val);
+                     }}
+                     className="form-control"
+                     style={{ width: 'auto' }}
+                   >
+                     <option value="">Skip this column</option>
+                     {availableFieldOptions.map((f) => (
+                       <option key={f} value={f}>
+                         {f === 'type' ? 'Type (BUY/SELL)' : f.charAt(0).toUpperCase() + f.slice(1)}
+                       </option>
+                     ))}
+                   </select>
+                 </div>
+               );
+             })}
+           </div>
+         )}
+          {(() => {
+            const mappedFields = new Set(Object.values(columnMapping).filter((f): f is string => f !== null));
+            const unmappedFields = allFields.filter((f) => !mappedFields.has(f));
+            if (unmappedFields.length === 0) return null;
+            return (
+              <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+                <h4 style={{ marginBottom: '12px' }}>Constant Values</h4>
+                <p style={{ margin: '0 0 12px 0', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                  Set default values for fields not present in the CSV
+                </p>
+                {unmappedFields.map((field) => (
+                  <div key={field} style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+                    <span style={{ color: 'var(--text-secondary)', textTransform: 'uppercase', minWidth: '60px', fontSize: '0.875rem' }}>{field}</span>
+                    {field === 'type' ? (
+                      <select
+                        value={constants[field] ?? ''}
+                        onChange={(e) => setConstants((prev) => ({ ...prev, [field]: e.target.value }))}
+                        className="form-control"
+                        style={{ width: 'auto' }}
+                      >
+                        <option value="">Skip</option>
+                        <option value="BUY">BUY</option>
+                        <option value="SELL">SELL</option>
+                      </select>
+                    ) : (
+                      <input
+                        type="text"
+                        value={constants[field] ?? ''}
+                        onChange={(e) => setConstants((prev) => ({ ...prev, [field]: e.target.value }))}
+                        placeholder={`Default ${field}`}
+                        className="form-control"
+                        style={{ width: 'auto' }}
+                      />
+                    )}
                   </div>
                 ))}
               </div>
-            )}
+            );
+          })()}
             {dateAmbiguous && (
               <div style={{ marginBottom: '16px', padding: '12px', background: 'rgba(255,193,7,0.1)', border: '1px solid rgba(255,193,7,0.3)', borderRadius: '8px' }}>
                 <p style={{ margin: 0, color: '#ffc107' }}>

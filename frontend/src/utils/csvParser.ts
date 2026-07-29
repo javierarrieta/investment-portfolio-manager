@@ -24,10 +24,17 @@ const FIELD_ALIASES: Record<string, CsvTransactionField> = {
 
 export function detectColumns(headers: string[]): ColumnMapping {
   const mapping: ColumnMapping = {};
+  const usedFields = new Set<CsvTransactionField>();
 
   for (let i = 0; i < headers.length; i++) {
     const normalized = headers[i].trim().toLowerCase().replace(/[^a-z0-9_]/g, '');
-    mapping[i] = FIELD_ALIASES[normalized] ?? null;
+    const matched = FIELD_ALIASES[normalized] ?? null;
+    if (matched !== null && !usedFields.has(matched)) {
+      mapping[i] = matched;
+      usedFields.add(matched);
+    } else {
+      mapping[i] = null;
+    }
   }
 
   return mapping;

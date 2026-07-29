@@ -103,6 +103,11 @@ function validateType(
   return errors;
 }
 
+function parseNumeric(val: string): number {
+  const cleaned = val.replace(/[$€£¥₹,\s]/g, '');
+  return parseFloat(cleaned);
+}
+
 function validateQuantity(
   qtyStr: string,
   row: number
@@ -114,7 +119,7 @@ function validateQuantity(
     return errors;
   }
 
-  const val = parseFloat(qtyStr);
+  const val = parseNumeric(qtyStr);
   if (isNaN(val)) {
     errors.push({ row, field: 'quantity', message: `Invalid quantity: "${qtyStr}"` });
     return errors;
@@ -138,14 +143,14 @@ function validatePrice(
     return errors;
   }
 
-  const val = parseFloat(priceStr);
+  const val = parseNumeric(priceStr);
   if (isNaN(val)) {
     errors.push({ row, field: 'price', message: `Invalid price: "${priceStr}"` });
     return errors;
   }
 
-  if (val <= 0) {
-    errors.push({ row, field: 'price', message: `Price must be positive, got ${val}` });
+  if (val < 0) {
+    errors.push({ row, field: 'price', message: `Price must be positive or zero, got ${val}` });
   }
 
   return errors;
@@ -161,7 +166,7 @@ function validateFee(
     return errors;
   }
 
-  const val = parseFloat(feeStr);
+  const val = parseNumeric(feeStr);
   if (isNaN(val)) {
     errors.push({ row, field: 'fee', message: `Invalid fee: "${feeStr}"` });
     return errors;
@@ -197,7 +202,8 @@ export interface ValidationReport {
 export function validateCsvRow(
   rowData: Record<string, string>,
   columnMapping: ColumnMapping,
-  rowNum: number
+  rowNum: number,
+  constants: Record<string, string> = {}
 ): ValidatedRow {
   const getMapped = (field: string): string | undefined => {
     for (const [idx, mappedField] of Object.entries(columnMapping)) {
@@ -207,7 +213,7 @@ export function validateCsvRow(
         if (key !== undefined) return rowData[key];
       }
     }
-    return undefined;
+    return constants[field];
   };
 
   const dateRaw = getMapped('date') ?? '';
@@ -234,9 +240,9 @@ export function validateCsvRow(
     date: dateRaw,
     symbol: symbolRaw.trim(),
     type: normalizedType,
-    quantity: parseFloat(qtyRaw) || 0,
-    price: parseFloat(priceRaw) || 0,
-    fee: parseFloat(feeRaw ?? '0') || 0,
+    quantity: parseNumeric(qtyRaw) || 0,
+    price: parseNumeric(priceRaw) || 0,
+    fee: parseNumeric(feeRaw ?? '0') || 0,
     errors: allErrors,
   };
 }
@@ -244,7 +250,8 @@ export function validateCsvRow(
 export function validateCsvFile(
   rows: Record<string, string>[],
   columnMapping: ColumnMapping,
-  portfolioSymbols: string[]
+  portfolioSymbols: string[],
+  constants: Record<string, string> = {}
 ): ValidationReport {
   const allErrors: CsvValidationRow[] = [];
   const validatedRows: ValidatedRow[] = [];
@@ -252,7 +259,7 @@ export function validateCsvFile(
   let validCount = 0;
 
   for (let i = 0; i < rows.length; i++) {
-    const validated = validateCsvRow(rows[i], columnMapping, i + 1);
+    const validated = validateCsvRow(rows[i], columnMapping, i + 1, constants);
 
     if (validated.errors.length > 0) {
       allErrors.push(...validated.errors);
