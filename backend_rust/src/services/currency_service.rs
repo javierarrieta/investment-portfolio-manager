@@ -176,11 +176,13 @@ impl CurrencyService {
     /// Caches the result in the historical_prices table for future lookups.
     /// Returns 0.0 if the price cannot be fetched (logged warning).
     pub async fn get_price(&self, symbol: &str, pool: &SqlitePool) -> f64 {
-        // 1. Check if we already have any cached price for this symbol
+        // 1. Check if we have a cached price for today
+        let today = chrono::Utc::now().date_naive();
         let existing = sqlx::query_as::<_, HistoricalPrice>(
-            "SELECT * FROM historical_prices WHERE symbol = ? ORDER BY date DESC LIMIT 1"
+            "SELECT * FROM historical_prices WHERE symbol = ? AND date = ?"
         )
         .bind(symbol)
+        .bind(today)
         .fetch_optional(pool)
         .await;
 
@@ -321,10 +323,52 @@ mod tests {
         assert!((r1 - r2).abs() < f64::EPSILON);
     }
 
-    // Integration test for get_price requires:
-    // 1. A real SQLite pool
-    // 2. Network access to Yahoo Finance
-    // Run manually: start server, hit /api/portfolios/<id>/tax-summary with a real asset
+    #[tokio::test]
+    async fn test_get_price_uses_today_cached_price() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let today = chrono::Utc::now().date_naive();
+        let _ = sqlx::query(
+            "INSERT INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
+        )
+        .bind("TEST")
+        .bind(today)
+        .bind(42.0)
+        .execute(&pool)
+        .await;
+
+        let svc = CurrencyService::new();
+        let price = svc.get_price("TEST", &pool).await;
+        assert!((price - 42.0).abs() < f64::EPSILON);
+    }
+
+    #[tokio::test]
+    async fn test_get_price_ignores_stale_cache() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let stale_date = chrono::NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let _ = sqlx::query(
+            "INSERT INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
+        )
+        .bind("TEST")
+        .bind(stale_date)
+        .bind(99.0)
+        .execute(&pool)
+        .await;
+
+        let svc = CurrencyService::new();
+        // Should not return stale price (99.0) - falls through to Yahoo fetch
+        let price = svc.get_price("TEST", &pool).await;
+        assert!((price - 99.0).abs() > f64::EPSILON, "should not return stale cached price");
+    }
 
     #[test]
     fn test_detect_currency_german_stock() {
