@@ -80,4 +80,7 @@ export interface PortfolioPerformance {
 export interface TaxSummary {
   assets: AssetTaxSummary[];
   currency: string;
+  total_portfolio_value: number;
+  total_realized_pnl: number;
+  total_unrealized_pnl: number;
 }

@@ -86,6 +86,7 @@ pub async fn get_portfolio_tax_summary(
         "total_unrealized_pnl": total_unrealized,
         "strategy": strategy_val,
         "threshold_days": threshold_val,
+        "currency": portfolio.base_currency,
     })))
 }
 

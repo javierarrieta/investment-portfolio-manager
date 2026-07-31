@@ -155,6 +155,18 @@ impl StatsEngine {
             }
         }
 
+        for symbol in &symbols {
+            let has_prices = price_map.keys().any(|(_, s)| s == symbol);
+            if !has_prices {
+                let current_price = currency_service.get_price(symbol, pool).await;
+                if current_price > 0.0 {
+                    for date in &dates {
+                        price_map.insert((*date, symbol.clone()), current_price);
+                    }
+                }
+            }
+        }
+
         let mut history = Vec::new();
         let mut portfolio_values = Vec::new();
         let mut daily_returns = Vec::new();
@@ -401,5 +413,46 @@ mod tests {
     async fn test_aggregate_weekly_empty() {
         let weekly = StatsEngine::aggregate_weekly(vec![]).await;
         assert!(weekly.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fallback_to_current_price_when_no_historical_data() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+            .execute(&pool)
+            .await
+            .unwrap();
+        let svc = CurrencyService::new();
+
+        let asset = Asset {
+            id: 1,
+            portfolio_id: 1,
+            symbol: "TESTFALLBACK".to_string(),
+            name: "Test Fallback".to_string(),
+            asset_type: "STOCK".to_string(),
+            sector: None,
+            currency: "USD".to_string(),
+        };
+        let tx = Transaction {
+            id: 1,
+            asset_id: 1,
+            r#type: "BUY".to_string(),
+            quantity: 10.0,
+            price: 50.0,
+            fee: 0.0,
+            date: DateTime::parse_from_rfc3339("2024-06-01T00:00:00Z").unwrap().with_timezone(&Utc),
+        };
+
+        let result = StatsEngine::calculate_portfolio_performance(
+            &pool,
+            &[asset],
+            &[tx],
+            "USD",
+            &svc,
+        ).await.unwrap();
+
+        let metrics = result.get("metrics").unwrap();
+        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
+        assert!(value >= 0.0);
     }
 }
