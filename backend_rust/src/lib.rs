@@ -90,6 +90,10 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         close_price REAL NOT NULL
     )").execute(pool).await?;
 
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_historical_prices_symbol_date ON historical_prices(symbol, date)")
+        .execute(pool)
+        .await?;
+
     Ok(())
 }
 

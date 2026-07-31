@@ -1,6 +1,6 @@
-use chrono::{NaiveDate, Utc, TimeZone};
+use chrono::{Datelike, NaiveDate, Utc, TimeZone};
 use sqlx::SqlitePool;
-use crate::models::{Asset, Transaction, HistoricalPrice};
+use crate::models::{Asset, Transaction};
 use crate::services::currency_service::CurrencyService;
 use anyhow::Result;
 use std::collections::HashMap;
@@ -8,76 +8,74 @@ use std::collections::HashMap;
 pub struct StatsEngine;
 
 impl StatsEngine {
-    pub async fn sync_historical_prices(
-        pool: &SqlitePool,
-        symbols: &[String],
-        currency_service: &CurrencyService,
-    ) -> Result<()> {
-        for symbol in symbols {
-            let existing = sqlx::query_as::<_, HistoricalPrice>(
-                "SELECT * FROM historical_prices WHERE symbol = ? ORDER BY date DESC LIMIT 1"
-            )
-            .bind(symbol)
-            .fetch_optional(pool)
-            .await?;
+    pub async fn aggregate_weekly(
+        daily_history: Vec<serde_json::Value>,
+    ) -> Vec<serde_json::Value> {
+        if daily_history.is_empty() {
+            return Vec::new();
+        }
 
-            if existing.is_none() {
-                let price = currency_service.get_price(symbol, pool).await;
-                if price > 0.0 {
-                    let today = Utc::now().date_naive();
-                    let _ = sqlx::query(
-                        "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
-                    )
-                    .bind(symbol)
-                    .bind(today)
-                    .bind(price)
-                    .execute(pool)
-                    .await;
-                }
+        let mut weeks: HashMap<(i32, u32), Vec<serde_json::Value>> = HashMap::new();
+        for item in daily_history {
+            let date_str = item.get("date").and_then(|d| d.as_str()).unwrap_or("");
+            if let Ok(date) = NaiveDate::parse_from_str(date_str, "%Y-%m-%d") {
+                let iso = date.iso_week();
+                let key = (date.year(), iso.week());
+                weeks.entry(key).or_default().push(item);
             }
         }
-        Ok(())
-    }
 
-    pub async fn get_historical_price_matrix(
-        pool: &SqlitePool,
-        symbols: &[String],
-        start_date: NaiveDate,
-        end_date: NaiveDate,
-        currency_service: &CurrencyService,
-    ) -> Result<Vec<(NaiveDate, String, f64)>> {
-        let mut all_prices = Vec::new();
-        for symbol in symbols {
-            let prices = sqlx::query_as::<_, HistoricalPrice>(
-                "SELECT * FROM historical_prices WHERE symbol = ? AND date >= ? AND date <= ?"
-            )
-            .bind(symbol)
-            .bind(start_date)
-            .bind(end_date)
-            .fetch_all(pool)
-            .await?;
+        let mut sorted_weeks: Vec<_> = weeks.into_iter().collect();
+        sorted_weeks.sort_by(|a, b| a.0.cmp(&b.0));
 
-            if prices.is_empty() {
-                let price = currency_service.get_price(symbol, pool).await;
-                if price > 0.0 {
-                    let today = Utc::now().date_naive();
-                    all_prices.push((today, symbol.clone(), price));
-                    let _ = sqlx::query(
-                        "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
-                    )
-                    .bind(symbol)
-                    .bind(today)
-                    .bind(price)
-                    .execute(pool)
-                    .await;
-                }
+        let mut weekly_history = Vec::new();
+        let mut prev_value: Option<f64> = None;
+        let mut twr_acc = 1.0;
+
+        for (_key, items) in sorted_weeks {
+            // Take the last trading day's value (non-zero), not the last calendar day
+            let trading_items: Vec<_> = items.iter()
+                .filter(|item| item.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0) > 0.0)
+                .collect();
+            
+            let last_item = if trading_items.is_empty() {
+                items.last().unwrap()
             } else {
-                for p in prices {
-                    all_prices.push((p.date, p.symbol, p.close_price));
+                trading_items.last().unwrap()
+            };
+            
+            let date = last_item.get("date").and_then(|d| d.as_str()).unwrap_or("");
+            let value = last_item.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
+
+            let daily_ret = match prev_value {
+                Some(prev) if prev > 0.0 && value > 0.0 => (value - prev) / prev,
+                _ if value > 0.0 => 0.0,
+                _ => {
+                    // Skip weeks with zero value (holidays/weekends) - carry forward TWR
+                    twr_acc *= 1.0;
+                    prev_value = Some(value);
+                    weekly_history.push(serde_json::json!({
+                        "date": date,
+                        "value": value,
+                        "daily_return": 0.0,
+                        "twr": twr_acc - 1.0,
+                    }));
+                    continue;
                 }
-            }
+            };
+
+            twr_acc *= 1.0 + daily_ret;
+            prev_value = Some(value);
+
+            weekly_history.push(serde_json::json!({
+                "date": date,
+                "value": value,
+                "daily_return": daily_ret,
+                "twr": twr_acc - 1.0,
+            }));
         }
-        Ok(all_prices)
+
+        weekly_history
     }
 
     pub async fn calculate_portfolio_performance(
@@ -104,21 +102,32 @@ impl StatsEngine {
         }
 
         let tx_dates: Vec<NaiveDate> = transactions.iter().map(|tx| tx.date.date_naive()).collect();
-        let mut start_date = *tx_dates.iter().min().unwrap();
+        let earliest_tx = *tx_dates.iter().min().unwrap();
         let end_date = Utc::now().date_naive();
 
-        // Sanity check: cap start date to 1900 to prevent massive loops from corrupt data
+        let start_date = earliest_tx - chrono::Duration::days(365);
+
         let min_reasonable_date = NaiveDate::from_ymd_opt(1900, 1, 1).unwrap();
-        if start_date < min_reasonable_date {
-            start_date = min_reasonable_date;
-        }
+        let start_date = if start_date < min_reasonable_date {
+            min_reasonable_date
+        } else {
+            start_date
+        };
 
         let symbols: Vec<String> = assets.iter().map(|a| a.symbol.clone()).collect();
-        let prices_data = Self::get_historical_price_matrix(pool, &symbols, start_date, end_date, currency_service).await?;
-        
+
         let mut price_map: HashMap<(NaiveDate, String), f64> = HashMap::new();
-        for (date, symbol, price) in prices_data {
-            price_map.insert((date, symbol), price);
+        for symbol in &symbols {
+            match currency_service.get_historical_prices(symbol, start_date, end_date, pool).await {
+                Ok(daily_prices) => {
+                    for (date, price) in daily_prices {
+                        price_map.insert((date, symbol.clone()), price);
+                    }
+                }
+                Err(e) => {
+                    eprintln!("WARN: Failed to get historical prices for {}: {}", symbol, e);
+                }
+            }
         }
 
         let mut rate_cache: HashMap<String, f64> = HashMap::new();
@@ -183,16 +192,16 @@ impl StatsEngine {
                 }
                 daily_val += qty * final_price;
             }
-            
+
             portfolio_values.push(daily_val);
-            
+
             let daily_ret = if portfolio_values.len() > 1 {
                 let prev_val = portfolio_values[portfolio_values.len()-2];
                 if prev_val > 0.0 { (daily_val - prev_val) / prev_val } else { 0.0 }
             } else {
                 0.0
             };
-            
+
             twr_acc *= 1.0 + daily_ret;
             daily_returns.push(daily_ret);
             twr_cumulative.push(twr_acc - 1.0);
@@ -207,15 +216,19 @@ impl StatsEngine {
 
         let final_val = portfolio_values.last().cloned().unwrap_or(0.0);
 
+        let weekly_history = Self::aggregate_weekly(history).await;
+
         Ok(serde_json::json!({
-            "history": history,
+            "history": weekly_history,
             "correlation_matrix": {},
             "metrics": {
-                "volatility": 0.0, // Would require std dev of daily_returns
+                "volatility": 0.0,
                 "sharpe_ratio": 0.0,
                 "beta": 1.0,
                 "portfolio_value": final_val,
                 "beta_adjusted_exposure": final_val,
+                "unrealized_pnl": 0.0,
+                "realized_pnl": 0.0,
             }
         }))
     }
@@ -295,8 +308,6 @@ mod tests {
 
         let metrics = result.get("metrics").unwrap();
         let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
-        // With Yahoo Finance parsing fixed, may return non-zero if Yahoo returns a price for TEST symbol
-        // The important thing is the function doesn't panic and returns valid metrics
         assert!(value >= 0.0);
     }
 
@@ -338,7 +349,6 @@ mod tests {
 
         let metrics = result.get("metrics").unwrap();
         let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
-        // Value should be 0 since no historical prices, but currency conversion path should not panic
         assert!((value - 0.0).abs() < f64::EPSILON);
     }
 
@@ -353,7 +363,6 @@ mod tests {
         let assets = vec![empty_asset()];
         let txs = vec![empty_tx()];
         
-        // Should not panic even with single day range
         let result = StatsEngine::calculate_portfolio_performance(
             &pool,
             &assets,
@@ -364,5 +373,33 @@ mod tests {
 
         let history = result.get("history").unwrap().as_array().unwrap();
         assert!(!history.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_weekly_basic() {
+        let daily_history = vec![
+            serde_json::json!({"date": "2024-01-01", "value": 100.0, "daily_return": 0.0, "twr": 0.0}),
+            serde_json::json!({"date": "2024-01-02", "value": 105.0, "daily_return": 0.05, "twr": 0.05}),
+            serde_json::json!({"date": "2024-01-03", "value": 103.0, "daily_return": -0.019, "twr": 0.029}),
+            serde_json::json!({"date": "2024-01-08", "value": 110.0, "daily_return": 0.068, "twr": 0.099}),
+            serde_json::json!({"date": "2024-01-09", "value": 112.0, "daily_return": 0.018, "twr": 0.119}),
+        ];
+
+        let weekly = StatsEngine::aggregate_weekly(daily_history).await;
+        assert_eq!(weekly.len(), 2);
+
+        let week1 = &weekly[0];
+        assert_eq!(week1.get("value").unwrap().as_f64().unwrap(), 103.0);
+        assert_eq!(week1.get("date").unwrap().as_str().unwrap(), "2024-01-03");
+
+        let week2 = &weekly[1];
+        assert_eq!(week2.get("value").unwrap().as_f64().unwrap(), 112.0);
+        assert_eq!(week2.get("date").unwrap().as_str().unwrap(), "2024-01-09");
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_weekly_empty() {
+        let weekly = StatsEngine::aggregate_weekly(vec![]).await;
+        assert!(weekly.is_empty());
     }
 }
