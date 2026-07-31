@@ -273,6 +273,143 @@ impl CurrencyService {
         price
     }
 
+    /// Fetches historical daily close prices for a symbol from Yahoo Finance.
+    /// Calls the /chart endpoint with explicit period1/period2 and interval=1d.
+    /// Batch upserts all daily prices into historical_prices (INSERT OR REPLACE).
+    /// If Yahoo fetch fails or returns no data, falls back to whatever exists in the DB.
+    pub async fn get_historical_prices(
+        &self,
+        symbol: &str,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+        pool: &SqlitePool,
+    ) -> Result<Vec<(NaiveDate, f64)>> {
+        let start_ts = start_date
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp();
+        let end_ts = end_date.and_hms_opt(0, 0, 0).unwrap().and_utc().timestamp();
+
+        let url = format!(
+            "https://query1.finance.yahoo.com/v8/finance/chart/{}?period1={}&period2={}&interval=1d&includePrePost=false",
+            symbol, start_ts, end_ts
+        );
+
+        let response = match self.fetch_with_retry(&url).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("WARN: Failed to fetch historical prices for {}: {}", symbol, e);
+                return self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await;
+            }
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body_preview = response.text().await.unwrap_or_default();
+            eprintln!(
+                "WARN: Yahoo Finance returned status {} for symbol {}. Body: {}",
+                status,
+                symbol,
+                &body_preview[..body_preview.len().min(500)]
+            );
+            return self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await;
+        }
+
+        let yahoo_resp: YahooChartResponse = match response.json().await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("WARN: Failed to parse historical Yahoo response for {}: {}", symbol, e);
+                return self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await;
+            }
+        };
+
+        let result = yahoo_resp.chart.result.into_iter().next();
+        let (timestamps, close_prices) = match result {
+            Some(r) => {
+                let ts = r.timestamp;
+                let cp = r
+                    .indicators
+                    .quote
+                    .first()
+                    .map(|q| q.close.clone())
+                    .unwrap_or_default();
+                (ts, cp)
+            }
+            None => {
+                eprintln!("WARN: No chart result for symbol: {}", symbol);
+                return self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await;
+            }
+        };
+
+        let mut daily_prices = Vec::new();
+        for (i, ts) in timestamps.iter().enumerate() {
+            if i < close_prices.len() {
+                if let Some(close) = close_prices[i] {
+                    if close > 0.0 {
+                        let date = DateTime::from_timestamp(*ts, 0)
+                            .map(|dt| dt.date_naive())
+                            .unwrap_or_default();
+                        daily_prices.push((date, close));
+                    }
+                }
+            }
+        }
+
+        if !daily_prices.is_empty() {
+            let mut tx = pool.begin().await?;
+            for (date, price) in &daily_prices {
+                let _ = sqlx::query(
+                    "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
+                )
+                .bind(symbol)
+                .bind(*date)
+                .bind(*price)
+                .execute(&mut *tx)
+                .await;
+            }
+            let _ = tx.commit().await;
+        }
+
+        if daily_prices.is_empty() {
+            return self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await;
+        }
+
+        // Merge with DB prices for any dates not covered by Yahoo Finance
+        // This ensures we have prices for today even when Yahoo hasn't closed the market yet
+        let db_prices = self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await?;
+        let yahoo_dates: std::collections::HashSet<NaiveDate> = daily_prices.iter().map(|(d, _)| *d).collect();
+        
+        let mut merged: Vec<(NaiveDate, f64)> = daily_prices;
+        for (date, price) in db_prices {
+            if !yahoo_dates.contains(&date) {
+                merged.push((date, price));
+            }
+        }
+        merged.sort_by_key(|(date, _)| *date);
+
+        Ok(merged)
+    }
+
+    async fn get_historical_prices_from_db(
+        &self,
+        symbol: &str,
+        start_date: NaiveDate,
+        end_date: NaiveDate,
+        pool: &SqlitePool,
+    ) -> Result<Vec<(NaiveDate, f64)>> {
+        let prices = sqlx::query_as::<_, HistoricalPrice>(
+            "SELECT * FROM historical_prices WHERE symbol = ? AND date >= ? AND date <= ?"
+        )
+        .bind(symbol)
+        .bind(start_date)
+        .bind(end_date)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(prices.into_iter().map(|p| (p.date, p.close_price)).collect())
+    }
+
     pub fn detect_currency(symbol: &str) -> String {
         let upper = symbol.to_uppercase();
         if upper.ends_with(".DE") || upper.ends_with(".F") || upper.ends_with(".FR") || upper.ends_with(".MC") {

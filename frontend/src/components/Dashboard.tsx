@@ -104,9 +104,12 @@ export default function Dashboard({
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '24px', marginBottom: '32px' }}>
         {/* Performance Chart */}
         <div className="glass-card chart-card" style={{ height: '420px' }}>
-          <h3 style={{ marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h3 style={{ marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <TrendingUp size={18} style={{ color: 'var(--color-primary)' }} /> Historical Performance (Time-Weighted)
           </h3>
+          <p style={{ margin: '0 0 16px 26px', color: 'var(--text-muted)', fontSize: '12px' }}>
+            Data as of {new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+          </p>
           <div className="chart-container-inner" style={{ height: '320px', minWidth: 0 }}>
             {mounted && (
               <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={0}>
