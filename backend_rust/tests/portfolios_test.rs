@@ -152,6 +152,22 @@ async fn test_delete_portfolio() {
 }
 
 #[tokio::test]
+async fn test_delete_portfolio_with_assets_returns_conflict() {
+    let pool = setup_db().await;
+    let id = seed_portfolio(&pool, "Delete With Assets", "USD").await;
+    seed_asset(&pool, id, "AAPL", "Apple").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let resp = client.delete(format!("/api/portfolios/{}", id)).dispatch().await;
+    assert_eq!(resp.status(), Status::Conflict);
+
+    // Verify portfolio still exists
+    let resp = client.get(format!("/api/portfolios/{}", id)).dispatch().await;
+    assert_eq!(resp.status(), Status::Ok);
+}
+
+#[tokio::test]
 async fn test_delete_portfolio_not_found() {
     let pool = setup_db().await;
     let rocket = build_rocket(pool);

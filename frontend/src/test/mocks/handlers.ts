@@ -108,6 +108,9 @@ export const handlers = [
       date: body.date
     }, { status: 201 })
   }),
+  http.delete('/api/portfolios/:id', () => {
+    return HttpResponse.json(null, { status: 204 })
+  }),
   http.all('*', () => {
     return HttpResponse.json({ error: 'not implemented' }, { status: 501 })
   })

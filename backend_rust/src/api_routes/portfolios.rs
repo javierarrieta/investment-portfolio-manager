@@ -231,6 +231,26 @@ pub async fn update_portfolio(
 )]
 #[delete("/<id>")]
 pub async fn delete_portfolio(id: i32, pool: &State<SqlitePool>) -> Result<Status, Status> {
+    let portfolio = sqlx::query_as::<_, DbPortfolio>("SELECT * FROM portfolios WHERE id = ?")
+        .bind(id)
+        .fetch_optional(pool.inner())
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    match portfolio {
+        Some(_) => {},
+        None => return Err(Status::NotFound),
+    }
+
+    let asset_count: (i64,) = sqlx::query_as("SELECT COUNT(*) FROM assets WHERE portfolio_id = ?")
+        .bind(id)
+        .fetch_one(pool.inner())
+        .await
+        .map_err(|_| Status::InternalServerError)?;
+
+    if asset_count.0 > 0 {
+        return Err(Status::Conflict);
+    }
 
     let res = sqlx::query("DELETE FROM portfolios WHERE id = ?")
         .bind(id)

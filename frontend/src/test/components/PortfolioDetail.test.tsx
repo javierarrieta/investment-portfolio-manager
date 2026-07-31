@@ -63,6 +63,7 @@ describe('PortfolioDetail', () => {
         taxSummary={mockTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -81,6 +82,7 @@ describe('PortfolioDetail', () => {
         taxSummary={emptyTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -99,6 +101,7 @@ describe('PortfolioDetail', () => {
         taxSummary={emptyTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -118,6 +121,7 @@ describe('PortfolioDetail', () => {
         taxSummary={mockTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -139,6 +143,7 @@ describe('PortfolioDetail', () => {
         taxSummary={emptyTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -190,6 +195,7 @@ describe('PortfolioDetail', () => {
         taxSummary={taxSummaryWithLots}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -213,6 +219,7 @@ describe('PortfolioDetail', () => {
         taxSummary={emptyTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -234,6 +241,7 @@ describe('PortfolioDetail', () => {
         taxSummary={mockTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={noop}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -264,6 +272,7 @@ describe('PortfolioDetail', () => {
         taxSummary={mockTaxSummary}
         onAddAsset={noop}
         onDeleteAsset={noop}
+        onDeletePortfolio={noop}
         onAddTransaction={onAddTransaction}
         strategy="FIFO"
         setStrategy={() => {}}
@@ -311,5 +320,43 @@ describe('PortfolioDetail', () => {
       quantity: 10,
       price: 180,
     }))
+  })
+
+  it('does not show Delete Portfolio button when portfolio has assets', () => {
+    render(
+      <PortfolioDetail
+        portfolio={mockPortfolio}
+        taxSummary={mockTaxSummary}
+        onAddAsset={noop}
+        onDeleteAsset={noop}
+        onDeletePortfolio={noop}
+        onAddTransaction={noop}
+        strategy="FIFO"
+        setStrategy={() => {}}
+        thresholdDays={30}
+        setThresholdDays={() => {}}
+      />
+    )
+
+    expect(screen.queryByText('Delete Portfolio')).not.toBeInTheDocument()
+  })
+
+  it('shows Delete Portfolio button when portfolio has no assets', () => {
+    render(
+      <PortfolioDetail
+        portfolio={{ ...mockPortfolio, assets: [] }}
+        taxSummary={emptyTaxSummary}
+        onAddAsset={noop}
+        onDeleteAsset={noop}
+        onDeletePortfolio={noop}
+        onAddTransaction={noop}
+        strategy="FIFO"
+        setStrategy={() => {}}
+        thresholdDays={30}
+        setThresholdDays={() => {}}
+      />
+    )
+
+    expect(screen.getByText('Delete Portfolio')).toBeInTheDocument()
   })
 })

@@ -206,6 +206,25 @@ export default function App() {
     }
   };
 
+  const handleDeletePortfolio = async () => {
+    try {
+      setLoading(true);
+      const res = await fetch(`${API_BASE}/portfolios/${selectedId}`, { method: 'DELETE' });
+      if (res.status === 409) {
+        alert('Cannot delete portfolio: it still contains assets. Remove all assets first.')
+        setLoading(false);
+        return;
+      }
+      if (!res.ok) throw new Error('Failed to delete portfolio');
+      setSelectedId(null);
+      await fetchPortfolios();
+      setLoading(false);
+    } catch (err) {
+      alert(`Error deleting portfolio: ${err instanceof Error ? err.message : String(err)}`);
+      setLoading(false);
+    }
+  };
+
   // Create mock demo portfolio to wow the user
   const handleLoadDemo = async () => {
     try {
@@ -375,22 +394,23 @@ export default function App() {
               />
             )}
 
-            {activeTab === 'portfolios' && taxSummary && (
-              <PortfolioDetail 
-                portfolio={currentPortfolio}
-                taxSummary={taxSummary}
-                onAddAsset={handleAddAsset}
-                onDeleteAsset={handleDeleteAsset}
-                onAddTransaction={handleAddTransaction}
-                onDeleteTransaction={handleDeleteTransaction}
-                onFetchPortfolioData={() => fetchPortfolioData(selectedId)}
-                strategy={strategy}
-                setStrategy={setStrategy}
-                thresholdDays={thresholdDays}
-                setThresholdDays={setThresholdDays}
-                transactions={transactions}
-              />
-            )}
+{activeTab === 'portfolios' && taxSummary && (
+                <PortfolioDetail 
+                  portfolio={currentPortfolio}
+                  taxSummary={taxSummary}
+                  onAddAsset={handleAddAsset}
+                  onDeleteAsset={handleDeleteAsset}
+                  onDeletePortfolio={handleDeletePortfolio}
+                  onAddTransaction={handleAddTransaction}
+                  onDeleteTransaction={handleDeleteTransaction}
+                  onFetchPortfolioData={() => fetchPortfolioData(selectedId)}
+                  strategy={strategy}
+                  setStrategy={setStrategy}
+                  thresholdDays={thresholdDays}
+                  setThresholdDays={setThresholdDays}
+                  transactions={transactions}
+                />
+              )}
 
             {activeTab === 'analytics' && (
               <AnalyticsView performance={performance} currency={currentPortfolio?.currency || 'USD'} />
