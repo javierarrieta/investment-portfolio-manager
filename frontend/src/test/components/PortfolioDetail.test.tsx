@@ -40,11 +40,17 @@ const mockTaxSummary: TaxSummary = {
     },
   ],
   currency: 'USD',
+  total_portfolio_value: 17500,
+  total_realized_pnl: 0,
+  total_unrealized_pnl: 2500,
 }
 
 const emptyTaxSummary: TaxSummary = {
   assets: [],
   currency: 'USD',
+  total_portfolio_value: 0,
+  total_realized_pnl: 0,
+  total_unrealized_pnl: 0,
 }
 
 const noop = async () => {}
@@ -173,6 +179,9 @@ describe('PortfolioDetail', () => {
         },
       ],
       currency: 'USD',
+      total_portfolio_value: 17500,
+      total_realized_pnl: 0,
+      total_unrealized_pnl: 2500,
     }
 
     render(
