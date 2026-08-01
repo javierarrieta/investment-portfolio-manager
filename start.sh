@@ -4,7 +4,7 @@
 trap "kill 0" EXIT
 
 echo "================================================"
-echo "🚀 Starting Investment Portfolio Manager..."
+echo "🚀 Starting Portfolio Prism..."
 echo "================================================"
 
 # 1. Start Backend Rust

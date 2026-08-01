@@ -21,7 +21,7 @@ use rocket_cors::{CorsOptions, AllowedOrigins, AllowedHeaders, Cors};
 
 #[get("/")]
 pub fn index() -> &'static str {
-    "Welcome to the Investment Portfolio Manager API (Rust)"
+    "Welcome to the Portfolio Prism API (Rust)"
 }
 
 #[get("/openapi.json")]

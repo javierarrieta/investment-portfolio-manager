@@ -1,4 +1,4 @@
-# Investment Portfolio Manager
+# Portfolio Prism
 
 Full-stack portfolio management application with tax lot tracking (FIFO/LIFO/Hybrid) and analytics.
 

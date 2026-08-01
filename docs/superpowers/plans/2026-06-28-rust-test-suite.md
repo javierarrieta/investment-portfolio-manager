@@ -1142,7 +1142,7 @@ The integration tests call `backend_rust::index`. We need to make it accessible 
 
 ```rust
 pub fn index() -> &'static str {
-    "Welcome to the Investment Portfolio Manager API (Rust)"
+    "Welcome to the Portfolio Prism API (Rust)"
 }
 ```
 
