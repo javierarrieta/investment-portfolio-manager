@@ -120,6 +120,12 @@ button, input, select, textarea {
   -webkit-text-fill-color: transparent;
 }
 
+.brand-logo {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+
 .nav-menu {
   list-style: none;
   display: flex;

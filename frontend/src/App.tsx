@@ -315,8 +315,8 @@ export default function App() {
       {/* Sidebar Navigation */}
       <aside className="sidebar">
         <div className="brand">
-          <Sparkles size={24} style={{ color: 'var(--color-primary)' }} />
-          <span>Antigravity Portfolio</span>
+          <img src="/logo.svg" alt="Logo" className="brand-logo" />
+          <span>Portfolio Prism</span>
         </div>
 
         <ul className="nav-menu">
