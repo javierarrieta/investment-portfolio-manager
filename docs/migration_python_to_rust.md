@@ -1,6 +1,6 @@
 # Migration Plan: Python Backend to Rust
 
-This document outlines the plan to migrate the Investment Portfolio Manager backend from Python (FastAPI) to Rust (Rocket).
+This document outlines the plan to migrate the Portfolio Prism backend from Python (FastAPI) to Rust (Rocket).
 
 ## 1. Technical Stack Mapping
 

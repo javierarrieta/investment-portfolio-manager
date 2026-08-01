@@ -1,7 +1,7 @@
 # Agent Instructions
 
 ## Overview
-Investment Portfolio Manager: Full-stack app for portfolio management and tax lot (FIFO/LIFO/Hybrid) calculations.
+Portfolio Prism: Full-stack app for portfolio management and tax lot (FIFO/LIFO/Hybrid) calculations.
 
 ## Architecture
 - **Backend**: Rust (Rocket) in `backend_rust/`. Uses SQLite (`backend/portfolio.db`) via SQLx.

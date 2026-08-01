@@ -4,7 +4,7 @@
 **Status**: Proposed
 
 ## Overview
-Extend the Investment Portfolio Manager to support assets held in different currencies (e.g., USD, EUR, GBP) while reporting all performance metrics and tax calculations in a single portfolio base currency.
+Extend Portfolio Prism to support assets held in different currencies (e.g., USD, EUR, GBP) while reporting all performance metrics and tax calculations in a single portfolio base currency.
 
 ## Architecture
 

@@ -1,6 +1,6 @@
 # Multi-Currency Portfolio Tracking Implementation Plan
 
-We will extend the Investment Portfolio Manager to support holding assets in different currencies (e.g., USD, EUR, GBP) within a single portfolio, and reporting performance and tax lots in the portfolio's base currency.
+We will extend Portfolio Prism to support holding assets in different currencies (e.g., USD, EUR, GBP) within a single portfolio, and reporting performance and tax lots in the portfolio's base currency.
 
 ---
 

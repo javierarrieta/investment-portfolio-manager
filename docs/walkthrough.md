@@ -1,6 +1,6 @@
-# Walkthrough: Investment Portfolio Manager
+# Walkthrough: Portfolio Prism
 
-We have successfully built and verified the full-stack **Investment Portfolio Manager**. The application is structured with a separate Rust (Rocket) backend and a React (Vite + Vanilla CSS) frontend.
+We have successfully built and verified the full-stack **Portfolio Prism**. The application is structured with a separate Rust (Rocket) backend and a React (Vite + Vanilla CSS) frontend.
 
 ---
 

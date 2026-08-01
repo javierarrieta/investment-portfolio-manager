@@ -315,8 +315,8 @@ export default function App() {
       {/* Sidebar Navigation */}
       <aside className="sidebar">
         <div className="brand">
-          <Sparkles size={24} style={{ color: 'var(--color-primary)' }} />
-          <span>Antigravity Portfolio</span>
+          <img src="/logo.svg" alt="Logo" className="brand-logo" />
+          <span>Portfolio Prism</span>
         </div>
 
         <ul className="nav-menu">
@@ -370,7 +370,7 @@ export default function App() {
         {/* Header Row */}
         <div className="header-row">
           <div className="header-title">
-            <h1>{currentPortfolio ? currentPortfolio.name : 'Investment Portfolio Manager'}</h1>
+            <h1>{currentPortfolio ? currentPortfolio.name : 'Portfolio Prism'}</h1>
             <p>{currentPortfolio ? `Holdings analytics in base currency: ${currentPortfolio.currency}` : 'Select or create a portfolio to begin.'}</p>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
