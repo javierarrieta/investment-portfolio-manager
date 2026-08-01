@@ -30,6 +30,7 @@ interface PortfolioDetailProps {
   taxSummary: TaxSummary;
   onAddAsset: (assetData: Partial<Asset>) => Promise<void>;
   onDeleteAsset: (assetId: number) => Promise<void>;
+  onDeletePortfolio: () => Promise<void>;
   onFetchPortfolioData: () => Promise<void>;
   onAddTransaction: (assetId: number, txData: Partial<Transaction>) => Promise<void>;
   strategy: string;
@@ -43,6 +44,7 @@ export default function PortfolioDetail({
   taxSummary, 
   onAddAsset, 
   onDeleteAsset,
+  onDeletePortfolio,
   onFetchPortfolioData, 
   onAddTransaction, 
   strategy, 
@@ -53,7 +55,8 @@ export default function PortfolioDetail({
   const [expandedAsset, setExpandedAsset] = useState<string | null>(null);
   const [showAssetModal, setShowAssetModal] = useState(false);
   const [showTxModal, setShowTxModal] = useState(false);
-  const [showImportModal, setShowImportModal] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+    const [showImportModal, setShowImportModal] = useState(false);
   
   // Forms State
   const [assetForm, setAssetForm] = useState<Partial<Asset>>({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD' });
@@ -141,6 +144,25 @@ export default function PortfolioDetail({
         <button onClick={() => setShowImportModal(true)} className="btn btn-primary">
           <Upload size={16} /> Import CSV
         </button>
+        {assets.length === 0 && (
+          <>
+            <button onClick={() => setShowDeleteConfirm(true)} className="btn btn-secondary" style={{ marginLeft: 'auto', color: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}>
+              <Trash2 size={16} /> Delete Portfolio
+            </button>
+            {showDeleteConfirm && (
+              <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
+                <div className="glass-card" style={{ padding: '32px', width: '450px', background: '#121929' }}>
+                  <h3 style={{ marginBottom: '12px', color: 'var(--color-danger)' }}>Delete Portfolio</h3>
+                  <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>Are you sure you want to delete this portfolio? This action cannot be undone.</p>
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px' }}>
+                    <button onClick={() => setShowDeleteConfirm(false)} className="btn btn-secondary">Cancel</button>
+                    <button onClick={() => { setShowDeleteConfirm(false); onDeletePortfolio(); }} className="btn btn-primary" style={{ background: 'var(--color-danger)', borderColor: 'var(--color-danger)' }}>Delete</button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </>
+        )}
       </div>
 
       {/* Assets Table */}
