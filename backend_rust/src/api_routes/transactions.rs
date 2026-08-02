@@ -33,6 +33,22 @@ pub async fn create_asset(
         return Err(Status::BadRequest);
     }
 
+    if !asset.isin.is_empty() {
+        let isin_upper = asset.isin.to_uppercase();
+        if !is_valid_isin(&isin_upper) {
+            return Err(Status::BadRequest);
+        }
+        let isin_exists = sqlx::query_as::<_, (i32,)>("SELECT id FROM assets WHERE portfolio_id = ? AND isin = ?")
+            .bind(portfolio_id)
+            .bind(&isin_upper)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|_| Status::InternalServerError)?;
+        if isin_exists.is_some() {
+            return Err(Status::Conflict);
+        }
+    }
+
     let resolved_currency = if asset.currency.is_empty() {
         CurrencyService::detect_currency(&asset.symbol)
     } else {
@@ -49,7 +65,7 @@ pub async fn create_asset(
     .bind(asset.asset_type.to_uppercase())
     .bind(&asset.sector)
     .bind(&resolved_currency)
-    .bind(&asset.isin)
+    .bind(if asset.isin.is_empty() { None } else { Some(asset.isin.to_uppercase()) })
     .fetch_one(pool.inner())
     .await
     .map_err(|_| Status::InternalServerError)?;
@@ -65,6 +81,19 @@ pub async fn create_asset(
         isin: res.isin,
         transactions: vec![],
     }))
+}
+
+fn is_valid_isin(isin: &str) -> bool {
+    if isin.len() != 12 {
+        return false;
+    }
+    let mut chars = isin.chars();
+    let country_code = chars.next().unwrap();
+    let second = chars.next().unwrap();
+    if !country_code.is_ascii_alphabetic() || !second.is_ascii_alphabetic() {
+        return false;
+    }
+    chars.all(|c| c.is_ascii_alphanumeric())
 }
 
 #[utoipa::path(

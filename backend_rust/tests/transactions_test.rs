@@ -321,7 +321,7 @@ async fn test_create_asset_null_sector() {
         "asset_type": "CRYPTO",
         "sector": null,
         "currency": "USD",
-        "isin": "BTC1234567890"
+        "isin": "BTC123456789"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -335,7 +335,7 @@ async fn test_create_asset_null_sector() {
     let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
     assert_eq!(parsed["symbol"], "BTC-USD");
     assert_eq!(parsed["sector"], serde_json::Value::Null);
-    assert_eq!(parsed["isin"], "BTC1234567890");
+    assert_eq!(parsed["isin"], "BTC123456789");
     assert!(parsed["id"].is_number());
 }
 
