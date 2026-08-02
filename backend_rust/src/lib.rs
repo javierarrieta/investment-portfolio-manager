@@ -70,8 +70,25 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         asset_type TEXT NOT NULL,
         sector TEXT,
         currency TEXT NOT NULL DEFAULT 'USD',
+        isin TEXT UNIQUE,
         FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
     )").execute(pool).await?;
+
+    let column_exists: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM pragma_table_info('assets') WHERE name = 'isin'"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0,));
+
+    if column_exists.0 == 0 {
+        if let Err(e) = sqlx::query("ALTER TABLE assets ADD COLUMN isin TEXT UNIQUE")
+            .execute(pool)
+            .await
+        {
+            eprintln!("WARN: Failed to add isin column to assets table: {}", e);
+        }
+    }
 
     sqlx::query("CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
