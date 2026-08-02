@@ -9,6 +9,7 @@ pub mod api_routes {
     pub mod portfolios;
     pub mod transactions;
     pub mod analytics;
+    pub mod lookup;
 }
 
 use rocket::{Rocket, Build};
@@ -130,6 +131,7 @@ pub fn build_rocket(pool: SqlitePool, currency_service: CurrencyService, cors: C
             api_routes::analytics::get_portfolio_performance,
         ])
         .mount("/api", routes![
+            api_routes::lookup::lookup_isin,
             api_routes::transactions::create_asset,
             api_routes::transactions::update_asset,
             api_routes::transactions::delete_asset,
