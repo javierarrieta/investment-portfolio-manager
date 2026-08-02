@@ -8,6 +8,9 @@ export interface paths {
   "/api/assets/<id>": {
     delete: operations["delete_asset"];
   };
+  "/api/assets/lookup": {
+    get: operations["lookup_isin"];
+  };
   "/api/portfolios/": {
     get: operations["list_portfolios"];
     post: operations["create_portfolio"];
@@ -53,6 +56,8 @@ export interface components {
     };
     AssetCreate: {
       asset_type: string;
+      currency: string;
+      isin: string;
       name: string;
       sector?: string | null;
       symbol: string;
@@ -88,6 +93,12 @@ export interface components {
       unrealized_pnl: number;
       /** Format: double */
       unrealized_roi: number;
+    };
+    AssetLookupResult: {
+      asset_type: string;
+      currency: string;
+      name: string;
+      symbol: string;
     };
     Portfolio: {
       base_currency: string;
@@ -174,6 +185,30 @@ export type $defs = Record<string, never>;
 export type external = Record<string, never>;
 
 export interface operations {
+
+  lookup_isin: {
+    parameters: {
+      query: {
+        isin: string;
+      };
+    };
+    responses: {
+      /** @description Asset metadata resolved from ISIN */
+      200: {
+        content: {
+          "application/json": components["schemas"]["AssetLookupResult"];
+        };
+      };
+      /** @description Invalid ISIN format */
+      400: {
+        content: never;
+      };
+      /** @description ISIN not found */
+      404: {
+        content: never;
+      };
+    };
+  };
 
   delete_asset: {
     parameters: {
