@@ -1,4 +1,4 @@
-use rocket::{State, serde::json::Json, http::Status};
+use rocket::{serde::json::Json, http::Status};
 use serde::Serialize;
 use utoipa::ToSchema;
 use crate::services::currency_service::CurrencyService;

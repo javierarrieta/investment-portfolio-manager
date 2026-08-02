@@ -83,11 +83,17 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     .unwrap_or((0,));
 
     if column_exists.0 == 0 {
-        if let Err(e) = sqlx::query("ALTER TABLE assets ADD COLUMN isin TEXT UNIQUE")
+        if let Err(e) = sqlx::query("ALTER TABLE assets ADD COLUMN isin TEXT")
             .execute(pool)
             .await
         {
             eprintln!("WARN: Failed to add isin column to assets table: {}", e);
+        } else {
+            let _ = sqlx::query(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_isin ON assets(isin)"
+            )
+            .execute(pool)
+            .await;
         }
     }
 
