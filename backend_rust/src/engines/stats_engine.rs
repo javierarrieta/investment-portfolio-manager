@@ -261,6 +261,7 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: None,
             currency: "USD".to_string(),
+            isin: None,
         }
     }
 
@@ -340,6 +341,7 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: None,
             currency: "CHF".to_string(),
+            isin: None,
         };
         let tx = Transaction {
             id: 1,
@@ -432,6 +434,7 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: None,
             currency: "USD".to_string(),
+            isin: None,
         };
         let tx = Transaction {
             id: 1,

@@ -21,6 +21,7 @@ pub struct Asset {
     pub asset_type: String,
     pub sector: Option<String>,
     pub currency: String,
+    pub isin: Option<String>,
 }
 
 #[derive(Debug, Clone, FromRow, Serialize, Deserialize, ToSchema)]
@@ -75,10 +76,12 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: Some("Tech".to_string()),
             currency: "USD".to_string(),
+            isin: Some("US0378331005".to_string()),
         };
         let json = serde_json::to_string(&a).unwrap();
         let deserialized: Asset = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "AAPL");
+        assert_eq!(deserialized.isin, Some("US0378331005".to_string()));
     }
 
     #[test]
