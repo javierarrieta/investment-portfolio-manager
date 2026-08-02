@@ -40,8 +40,8 @@ pub async fn create_asset(
     };
 
     let res = sqlx::query_as::<_, Asset>(
-        "INSERT INTO assets (portfolio_id, symbol, name, asset_type, sector, currency) 
-         VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
+        "INSERT INTO assets (portfolio_id, symbol, name, asset_type, sector, currency, isin) 
+         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *"
     )
     .bind(portfolio_id)
     .bind(asset.symbol.to_uppercase())
@@ -49,6 +49,7 @@ pub async fn create_asset(
     .bind(asset.asset_type.to_uppercase())
     .bind(&asset.sector)
     .bind(&resolved_currency)
+    .bind(&asset.isin)
     .fetch_one(pool.inner())
     .await
     .map_err(|_| Status::InternalServerError)?;
@@ -61,6 +62,7 @@ pub async fn create_asset(
         asset_type: res.asset_type,
         sector: res.sector,
         currency: res.currency,
+        isin: res.isin,
         transactions: vec![],
     }))
 }
@@ -106,6 +108,7 @@ pub async fn update_asset(
             asset_type: a.asset_type,
             sector: a.sector,
             currency: a.currency,
+            isin: a.isin,
             transactions: vec![],
         })),
         None => Err(Status::NotFound),

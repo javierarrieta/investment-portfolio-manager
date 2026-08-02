@@ -88,6 +88,7 @@ async fn fetch_assets_for_portfolio(pool: &sqlx::sqlite::SqlitePool, portfolio_i
         asset_type: a.asset_type,
         sector: a.sector,
         currency: a.currency,
+        isin: a.isin,
         transactions: txs_by_asset.remove(&a.id).unwrap_or_default(),
     }).collect();
 
@@ -124,6 +125,7 @@ pool: &State<SqlitePool>) -> Result<Json<Vec<PortfolioOut>>, Status> {
             asset_type: a.asset_type,
             sector: a.sector,
             currency: a.currency,
+            isin: a.isin,
             transactions: vec![],
         })
         .fold(HashMap::new(), |mut map, asset| {
