@@ -1,5 +1,5 @@
 use rocket::{serde::json::Json, http::Status};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
 use crate::services::currency_service::CurrencyService;
 
@@ -9,6 +9,26 @@ pub struct AssetLookupResult {
     pub name: String,
     pub asset_type: String,
     pub currency: String,
+}
+
+// --- OpenFIGI types ---
+
+#[derive(Deserialize)]
+struct OpenFigiResponse(Vec<OpenFigiJobResult>);
+
+#[derive(Deserialize)]
+struct OpenFigiJobResult {
+    data: Option<Vec<OpenFigiRecord>>,
+}
+
+#[derive(Deserialize)]
+struct OpenFigiRecord {
+    ticker: Option<String>,
+    name: Option<String>,
+    #[serde(rename = "exchCode")]
+    exch_code: Option<String>,
+    #[serde(rename = "securityType")]
+    security_type: Option<String>,
 }
 
 #[utoipa::path(
@@ -31,73 +51,139 @@ pub async fn lookup_isin(
         return Err(Status::BadRequest);
     }
 
-    let url = format!("https://query1.finance.yahoo.com/v1/finance/search?q={}", isin);
+    let isin_upper = isin.to_uppercase();
 
+    // 1. Try OpenFIGI first
+    if let Some(result) = openfigi_lookup(&isin_upper).await {
+        return Ok(Json(result));
+    }
+
+    // 2. Fallback to Yahoo Finance
+    if let Some(result) = yahoo_lookup(&isin_upper).await {
+        return Ok(Json(result));
+    }
+
+    eprintln!("WARN: ISIN lookup failed for {} (both OpenFIGI and Yahoo)", isin_upper);
+    Err(Status::NotFound)
+}
+
+async fn openfigi_lookup(isin: &str) -> Option<AssetLookupResult> {
     let client = reqwest::Client::new();
-    let response = client.get(&url)
+    let body = serde_json::json!([{"idType": "ID_ISIN", "idValue": isin}]);
+
+    let response = client
+        .post("https://api.openfigi.com/v3/mapping")
+        .header("Content-Type", "application/json")
+        .json(&body)
+        .timeout(std::time::Duration::from_secs(10))
+        .send()
+        .await
+        .map_err(|e| {
+            eprintln!("WARN: OpenFIGI network error for {}: {}", isin, e);
+            e
+        })
+        .ok()?;
+
+    let status = response.status();
+    if !status.is_success() {
+        eprintln!("WARN: OpenFIGI returned {} for {}", status, isin);
+        return None;
+    }
+
+    let parsed: OpenFigiResponse = response.json().await.map_err(|e| {
+        eprintln!("WARN: OpenFIGI parse error for {}: {}", isin, e);
+        e
+    })
+    .ok()?;
+
+    let first_job = parsed.0.first()?;
+    let records = first_job.data.as_ref()?;
+
+    // Prefer the Luxembourg exchange for LU ISINs, otherwise take the first result
+    let record = records
+        .iter()
+        .find(|r| r.exch_code.as_deref() == Some("LX"))
+        .or_else(|| records.first())?;
+
+    let ticker = record.ticker.as_deref()?;
+    let name = record.name.as_deref().unwrap_or(ticker);
+    let security_type = record.security_type.as_deref().unwrap_or("");
+
+    let asset_type = match security_type {
+        "Open-End Fund" | "Mutual Fund" => "MUTUAL_FUND",
+        "ETF" | "Exchange Traded Fund" => "ETF",
+        "Common Stock" | "Equity" | "Preferred Stock" => "STOCK",
+        "Crypto" | "Cryptocurrency" => "CRYPTO",
+        "Index" => "ETF",
+        _ => "STOCK",
+    };
+
+    let currency = CurrencyService::detect_currency(ticker);
+
+    Some(AssetLookupResult {
+        symbol: ticker.to_string(),
+        name: name.to_string(),
+        asset_type: asset_type.to_string(),
+        currency,
+    })
+}
+
+async fn yahoo_lookup(isin: &str) -> Option<AssetLookupResult> {
+    let client = reqwest::Client::new();
+    let url = format!(
+        "https://query1.finance.yahoo.com/v1/finance/search?q={}",
+        isin
+    );
+
+    let response = client
+        .get(&url)
         .header("User-Agent", "Mozilla/5.0")
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
         .map_err(|e| {
-            eprintln!("WARN: ISIN lookup network error for {}: {}", isin, e);
-            Status::BadGateway
-        })?;
+            eprintln!("WARN: Yahoo lookup network error for {}: {}", isin, e);
+            e
+        })
+        .ok()?;
 
     let status = response.status();
     if !status.is_success() {
-        eprintln!("WARN: ISIN lookup returned {} for {}", status, isin);
-        return Err(match status.as_u16() {
-            404 => Status::NotFound,
-            429 => Status::TooManyRequests,
-            _ => Status::BadGateway,
-        });
+        eprintln!("WARN: Yahoo lookup returned {} for {}", status, isin);
+        return None;
     }
 
-    let body: serde_json::Value = response.json().await
-        .map_err(|e| {
-            eprintln!("WARN: ISIN lookup parse error for {}: {}", isin, e);
-            Status::BadGateway
-        })?;
+    let body: serde_json::Value = response.json().await.map_err(|e| {
+        eprintln!("WARN: Yahoo lookup parse error for {}: {}", isin, e);
+        e
+    })
+    .ok()?;
 
-    let quotes = body.get("quotes")
+    let quote = body
+        .get("quotes")
         .and_then(|q| q.as_array())
-        .and_then(|arr| arr.first())
-        .ok_or_else(|| {
-            eprintln!("WARN: ISIN lookup no results for {}: {:?}", isin, body);
-            Status::NotFound
-        })?;
+        .and_then(|arr| arr.first())?;
 
-    let symbol = quotes.get("symbol")
-        .and_then(|s| s.as_str())
-        .ok_or(Status::NotFound)?
-        .to_string();
-
-    let name = quotes.get("name")
-        .and_then(|n| n.as_str())
-        .unwrap_or(&symbol)
-        .to_string();
-
-    let exchange = quotes.get("exchange")
-        .and_then(|e| e.as_str())
-        .unwrap_or("");
+    let symbol = quote.get("symbol")?.as_str()?;
+    let name = quote.get("name").and_then(|n| n.as_str()).unwrap_or(symbol);
+    let exchange = quote.get("exchange").and_then(|e| e.as_str()).unwrap_or("");
 
     let asset_type = if exchange.contains("CB") || exchange.contains("CM") {
-        "CRYPTO".to_string()
+        "CRYPTO"
     } else if exchange.contains("INDEX") {
-        "ETF".to_string()
+        "ETF"
     } else {
-        "STOCK".to_string()
+        "STOCK"
     };
 
-    let currency = CurrencyService::detect_currency(&symbol);
+    let currency = CurrencyService::detect_currency(symbol);
 
-    Ok(Json(AssetLookupResult {
-        symbol,
-        name,
-        asset_type,
+    Some(AssetLookupResult {
+        symbol: symbol.to_string(),
+        name: name.to_string(),
+        asset_type: asset_type.to_string(),
         currency,
-    }))
+    })
 }
 
 pub fn is_valid_isin(isin: &str) -> bool {
