@@ -31,6 +31,7 @@ pub struct AssetCreate {
     pub asset_type: String,
     pub sector: Option<String>,
     pub currency: String,
+    #[serde(default)]
     pub isin: String,
 }
 

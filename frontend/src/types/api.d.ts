@@ -48,6 +48,7 @@ export interface components {
       currency: string;
       /** Format: int32 */
       id: number;
+      isin?: string | null;
       name: string;
       /** Format: int32 */
       portfolio_id: number;
@@ -66,6 +67,7 @@ export interface components {
       asset_type: string;
       /** Format: int32 */
       id: number;
+      isin?: string | null;
       name: string;
       /** Format: int32 */
       portfolio_id: number;

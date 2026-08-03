@@ -2,6 +2,7 @@ use rocket::{State, serde::json::Json, http::Status};
 use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction};
 use crate::schemas::{AssetCreate, AssetOut, AssetUpdate, TransactionCreate, TransactionOut};
+use crate::api_routes::lookup::is_valid_isin;
 use crate::services::currency_service::CurrencyService;
 
 #[utoipa::path(
@@ -81,19 +82,6 @@ pub async fn create_asset(
         isin: res.isin,
         transactions: vec![],
     }))
-}
-
-fn is_valid_isin(isin: &str) -> bool {
-    if isin.len() != 12 {
-        return false;
-    }
-    let mut chars = isin.chars();
-    let country_code = chars.next().unwrap();
-    let second = chars.next().unwrap();
-    if !country_code.is_ascii_alphabetic() || !second.is_ascii_alphabetic() {
-        return false;
-    }
-    chars.all(|c| c.is_ascii_alphanumeric())
 }
 
 #[utoipa::path(

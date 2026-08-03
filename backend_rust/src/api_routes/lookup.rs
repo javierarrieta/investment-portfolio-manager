@@ -83,7 +83,7 @@ pub async fn lookup_isin(
     }))
 }
 
-fn is_valid_isin(isin: &str) -> bool {
+pub fn is_valid_isin(isin: &str) -> bool {
     let isin = isin.to_uppercase();
     if isin.len() != 12 {
         return false;

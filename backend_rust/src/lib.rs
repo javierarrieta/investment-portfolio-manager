@@ -71,7 +71,7 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         asset_type TEXT NOT NULL,
         sector TEXT,
         currency TEXT NOT NULL DEFAULT 'USD',
-        isin TEXT UNIQUE,
+        isin TEXT,
         FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
     )").execute(pool).await?;
 
@@ -88,14 +88,12 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
             .await
         {
             eprintln!("WARN: Failed to add isin column to assets table: {}", e);
-        } else {
-            let _ = sqlx::query(
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_isin ON assets(isin)"
-            )
-            .execute(pool)
-            .await;
         }
     }
+
+    let _ = sqlx::query("DROP INDEX IF EXISTS idx_assets_isin")
+        .execute(pool)
+        .await;
 
     sqlx::query("CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,

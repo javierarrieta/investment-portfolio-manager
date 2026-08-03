@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { Plus, Trash2, ChevronDown, ChevronUp, Upload } from 'lucide-react';
 import { formatCurrency, formatPercent } from '../utils/formatters';
 import { 
@@ -9,6 +9,7 @@ import {
   TransactionType, 
   AssetType
 } from '../types';
+import { isValidIsin } from '../utils/isinValidator';
 import CsvImportModal from './CsvImportModal';
 
 function detectCurrencyFromSymbol(symbol: string): string {
@@ -23,10 +24,6 @@ function detectCurrencyFromSymbol(symbol: string): string {
   if (s.endsWith('.K')) return 'KRW';
   if (s.includes('USD') || s.includes('BTC') || s.includes('ETH')) return 'USD';
   return 'USD';
-}
-
-function isValidIsin(isin: string): boolean {
-  return /^[A-Z]{2}[A-Z0-9]{10}$/i.test(isin);
 }
 
 async function lookupIsin(isin: string): Promise<{ symbol: string; name: string; asset_type: string; currency: string } | null> {
@@ -77,6 +74,7 @@ export default function PortfolioDetail({
   const [txForm, setTxForm] = useState({ asset_id: '', type: 'BUY' as TransactionType, quantity: '', price: '', fee: '0.0', date: new Date().toISOString().slice(0, 16) });
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [isLookingUp, setIsLookingUp] = useState(false);
+  const lastLookedUpIsin = useRef('');
   
   const handleAssetSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -84,35 +82,34 @@ export default function PortfolioDetail({
     await onAddAsset(assetForm);
     setAssetForm({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD', isin: '' });
     setLookupError(null);
+    lastLookedUpIsin.current = '';
     setShowAssetModal(false);
   };
 
   const handleIsinLookup = async (isin: string) => {
-    if (!isValidIsin(isin)) {
+    const upper = isin.toUpperCase();
+    if (!isValidIsin(upper)) {
       setLookupError('ISIN must be 12 alphanumeric characters');
       return;
     }
+    if (lastLookedUpIsin.current === upper) return;
+    lastLookedUpIsin.current = upper;
     setIsLookingUp(true);
     setLookupError(null);
-    try {
-      const result = await lookupIsin(isin);
-      if (result) {
-        setAssetForm(prev => ({
-          ...prev,
-          symbol: result.symbol,
-          name: result.name,
-          asset_type: result.asset_type as AssetType,
-          currency: result.currency,
-          isin: isin.toUpperCase(),
-        }));
-      } else {
-        setLookupError('ISIN not found. You can enter a symbol directly.');
-      }
-    } catch {
-      setLookupError('Could not resolve ISIN. Please try again or enter a symbol.');
-    } finally {
-      setIsLookingUp(false);
+    const result = await lookupIsin(upper);
+    if (result) {
+      setAssetForm(prev => ({
+        ...prev,
+        symbol: result.symbol,
+        name: result.name,
+        asset_type: result.asset_type as AssetType,
+        currency: result.currency,
+        isin: upper,
+      }));
+    } else {
+      setLookupError('ISIN not found. You can enter a symbol directly.');
     }
+    setIsLookingUp(false);
   };
 
   const handleTxSubmit = async (e: React.FormEvent) => {
@@ -345,19 +342,22 @@ export default function PortfolioDetail({
                    type="text"
                    value={assetForm.isin || ''}
                    onChange={(e) => {
-                     const val = e.target.value.toUpperCase();
-                     setAssetForm(prev => ({ ...prev, isin: val }));
-                     setLookupError(null);
-                     if (val.length === 12) {
-                       handleIsinLookup(val);
-                     }
-                   }}
-                   onBlur={() => {
-                     const val = assetForm.isin || '';
-                     if (val.length === 12) {
-                       handleIsinLookup(val);
-                     }
-                   }}
+                      const val = e.target.value.toUpperCase();
+                      setAssetForm(prev => ({ ...prev, isin: val }));
+                      setLookupError(null);
+                      if (val !== lastLookedUpIsin.current) {
+                        lastLookedUpIsin.current = '';
+                      }
+                      if (val.length === 12) {
+                        handleIsinLookup(val);
+                      }
+                    }}
+                    onBlur={() => {
+                      const val = assetForm.isin || '';
+                      if (val.length === 12) {
+                        handleIsinLookup(val);
+                      }
+                    }}
                    className="form-control"
                    placeholder="e.g. US0378331005"
                    maxLength={12}
@@ -428,7 +428,7 @@ export default function PortfolioDetail({
                 />
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
-                <button type="button" onClick={() => { setShowAssetModal(false); setAssetForm({ symbol: '', name: '', asset_type: 'STOCK' as AssetType, sector: '', currency: 'USD', isin: '' }); setLookupError(null); }} className="btn btn-secondary">Cancel</button>
+                <button type="button" onClick={() => { setShowAssetModal(false); setAssetForm({ symbol: '', name: '', asset_type: 'STOCK' as AssetType, sector: '', currency: 'USD', isin: '' }); setLookupError(null); lastLookedUpIsin.current = ''; }} className="btn btn-secondary">Cancel</button>
                 <button type="submit" className="btn btn-primary">Add Symbol</button>
               </div>
             </form>
