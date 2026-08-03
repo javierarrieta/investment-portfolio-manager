@@ -208,11 +208,13 @@ impl CurrencyService {
 
         // 3. Fallback to EODHD if ISIN is available
         if let Some(isin) = isin {
-            if let Some(eodhd_key) = &self.eodhd_api_key {
-                let price = self.fetch_eodhd_price(isin, eodhd_key).await;
-                if price > 0.0 {
-                    self.cache_price(symbol, today, price, pool).await;
-                    return price;
+            if !isin.is_empty() {
+                if let Some(eodhd_key) = &self.eodhd_api_key {
+                    let price = self.fetch_eodhd_price(isin, eodhd_key).await;
+                    if price > 0.0 {
+                        self.cache_price(symbol, today, price, pool).await;
+                        return price;
+                    }
                 }
             }
         }
