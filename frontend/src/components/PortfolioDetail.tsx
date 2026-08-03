@@ -26,7 +26,7 @@ function detectCurrencyFromSymbol(symbol: string): string {
   return 'USD';
 }
 
-async function lookupIsin(isin: string): Promise<{ symbol: string; name: string; asset_type: string; currency: string } | null> {
+async function lookupIsin(isin: string): Promise<{ symbol: string; name: string; asset_type: string } | null> {
   try {
     const res = await fetch(`/api/assets/lookup?isin=${isin.toUpperCase()}`);
     if (!res.ok) return null;
@@ -103,7 +103,7 @@ export default function PortfolioDetail({
         symbol: result.symbol,
         name: result.name,
         asset_type: result.asset_type as AssetType,
-        currency: result.currency,
+        currency: portfolio.currency,
         isin: upper,
       }));
     } else {

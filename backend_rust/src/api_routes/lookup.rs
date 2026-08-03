@@ -1,14 +1,12 @@
 use rocket::{serde::json::Json, http::Status};
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
-use crate::services::currency_service::CurrencyService;
 
 #[derive(Serialize, ToSchema)]
 pub struct AssetLookupResult {
     pub symbol: String,
     pub name: String,
     pub asset_type: String,
-    pub currency: String,
 }
 
 // --- OpenFIGI types ---
@@ -118,13 +116,10 @@ async fn openfigi_lookup(isin: &str) -> Option<AssetLookupResult> {
         _ => "STOCK",
     };
 
-    let currency = CurrencyService::detect_currency(ticker);
-
     Some(AssetLookupResult {
         symbol: ticker.to_string(),
         name: name.to_string(),
         asset_type: asset_type.to_string(),
-        currency,
     })
 }
 
@@ -176,13 +171,10 @@ async fn yahoo_lookup(isin: &str) -> Option<AssetLookupResult> {
         "STOCK"
     };
 
-    let currency = CurrencyService::detect_currency(symbol);
-
     Some(AssetLookupResult {
         symbol: symbol.to_string(),
         name: name.to_string(),
         asset_type: asset_type.to_string(),
-        currency,
     })
 }
 
