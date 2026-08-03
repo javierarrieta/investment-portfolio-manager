@@ -32,24 +32,41 @@ pub async fn lookup_isin(
     }
 
     let url = format!("https://query1.finance.yahoo.com/v1/finance/search?q={}", isin);
+
     let client = reqwest::Client::new();
     let response = client.get(&url)
+        .header("User-Agent", "Mozilla/5.0")
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| {
+            eprintln!("WARN: ISIN lookup network error for {}: {}", isin, e);
+            Status::BadGateway
+        })?;
 
-    if !response.status().is_success() {
-        return Err(Status::InternalServerError);
+    let status = response.status();
+    if !status.is_success() {
+        eprintln!("WARN: ISIN lookup returned {} for {}", status, isin);
+        return Err(match status.as_u16() {
+            404 => Status::NotFound,
+            429 => Status::TooManyRequests,
+            _ => Status::BadGateway,
+        });
     }
 
     let body: serde_json::Value = response.json().await
-        .map_err(|_| Status::InternalServerError)?;
+        .map_err(|e| {
+            eprintln!("WARN: ISIN lookup parse error for {}: {}", isin, e);
+            Status::BadGateway
+        })?;
 
     let quotes = body.get("quotes")
         .and_then(|q| q.as_array())
         .and_then(|arr| arr.first())
-        .ok_or(Status::NotFound)?;
+        .ok_or_else(|| {
+            eprintln!("WARN: ISIN lookup no results for {}: {:?}", isin, body);
+            Status::NotFound
+        })?;
 
     let symbol = quotes.get("symbol")
         .and_then(|s| s.as_str())
