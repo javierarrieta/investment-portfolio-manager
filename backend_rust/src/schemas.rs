@@ -31,6 +31,8 @@ pub struct AssetCreate {
     pub asset_type: String,
     pub sector: Option<String>,
     pub currency: String,
+    #[serde(default)]
+    pub isin: String,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
@@ -42,6 +44,7 @@ pub struct AssetOut {
     pub asset_type: String,
     pub sector: Option<String>,
     pub currency: String,
+    pub isin: Option<String>,
     pub transactions: Vec<TransactionOut>,
 }
 
@@ -152,12 +155,14 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: Some("Auto".to_string()),
             currency: "USD".to_string(),
+            isin: "US88160R1014".to_string(),
         };
         let json = serde_json::to_string(&a).unwrap();
         let deserialized: AssetCreate = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "TSLA");
         assert_eq!(deserialized.asset_type, "STOCK");
         assert_eq!(deserialized.currency, "USD");
+        assert_eq!(deserialized.isin, "US88160R1014");
         assert_eq!(deserialized.sector, Some("Auto".to_string()));
     }
 
@@ -201,12 +206,14 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: Some("Technology".to_string()),
             currency: "USD".to_string(),
+            isin: Some("US0378331005".to_string()),
             transactions: vec![],
         };
         let json = serde_json::to_string(&a).unwrap();
         let deserialized: AssetOut = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "AAPL");
         assert_eq!(deserialized.currency, "USD");
+        assert_eq!(deserialized.isin, Some("US0378331005".to_string()));
         assert_eq!(deserialized.sector, Some("Technology".to_string()));
     }
 

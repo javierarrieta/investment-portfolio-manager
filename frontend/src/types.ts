@@ -19,6 +19,7 @@ export interface Asset {
   sector?: string;
   portfolio_id: number;
   currency: string;
+  isin: string | null;
   transactions: Transaction[];
 }
 

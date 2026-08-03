@@ -359,4 +359,28 @@ describe('PortfolioDetail', () => {
 
     expect(screen.getByText('Delete Portfolio')).toBeInTheDocument()
   })
+
+  it('includes ISIN field in the Add Asset modal', async () => {
+    const onAddAsset = vi.fn().mockResolvedValue(undefined)
+    render(
+      <PortfolioDetail
+        portfolio={mockPortfolio}
+        taxSummary={mockTaxSummary}
+        onAddAsset={onAddAsset}
+        onDeleteAsset={noop}
+        onDeletePortfolio={noop}
+        onFetchPortfolioData={noop}
+        onAddTransaction={noop}
+        strategy="FIFO"
+        setStrategy={() => {}}
+        thresholdDays={30}
+        setThresholdDays={() => {}}
+      />
+    )
+
+    const addButton = screen.getByText('Add Asset Symbol')
+    fireEvent.click(addButton)
+
+    expect(screen.getByPlaceholderText('e.g. US0378331005')).toBeInTheDocument()
+  })
 })

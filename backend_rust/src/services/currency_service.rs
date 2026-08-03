@@ -39,11 +39,18 @@ struct Quote {
     close: Vec<Option<f64>>,
 }
 
+#[derive(Deserialize)]
+struct EodhdSearchResult {
+    #[serde(rename = "previousClose")]
+    previous_close: Option<f64>,
+}
+
 pub struct CurrencyService {
     client: Client,
     timeout: std::time::Duration,
     cache: Arc<RwLock<HashMap<(String, String, NaiveDate), f64>>>,
     last_request: Mutex<Option<Instant>>,
+    eodhd_api_key: Option<String>,
 }
 
 impl CurrencyService {
@@ -57,6 +64,7 @@ impl CurrencyService {
             timeout: std::time::Duration::from_secs(10),
             cache: Arc::new(RwLock::new(HashMap::new())),
             last_request: Mutex::new(None),
+            eodhd_api_key: std::env::var("EODHD_API_KEY").ok(),
         }
     }
 
@@ -172,10 +180,11 @@ impl CurrencyService {
         Ok(rate)
     }
 
-    /// Fetches the latest close price for a ticker symbol from Yahoo Finance.
+    /// Fetches the latest close price for a ticker symbol.
+    /// Tries Yahoo Finance first, then falls back to EODHD if an ISIN is provided.
     /// Caches the result in the historical_prices table for future lookups.
     /// Returns 0.0 if the price cannot be fetched (logged warning).
-    pub async fn get_price(&self, symbol: &str, pool: &SqlitePool) -> f64 {
+    pub async fn get_price(&self, symbol: &str, isin: Option<&str>, pool: &SqlitePool) -> f64 {
         // 1. Check if we have a cached price for today
         let today = chrono::Utc::now().date_naive();
         let existing = sqlx::query_as::<_, HistoricalPrice>(
@@ -190,25 +199,45 @@ impl CurrencyService {
             return hp.close_price;
         }
 
-        // 2. Fetch from Yahoo Finance
+        // 2. Try Yahoo Finance
+        let price = self.fetch_yahoo_price(symbol).await;
+        if price > 0.0 {
+            self.cache_price(symbol, today, price, pool).await;
+            return price;
+        }
+
+        // 3. Fallback to EODHD if ISIN is available
+        if let Some(isin) = isin {
+            if !isin.is_empty() {
+                if let Some(eodhd_key) = &self.eodhd_api_key {
+                    let price = self.fetch_eodhd_price(isin, eodhd_key).await;
+                    if price > 0.0 {
+                        self.cache_price(symbol, today, price, pool).await;
+                        return price;
+                    }
+                }
+            }
+        }
+
+        0.0
+    }
+
+    async fn fetch_yahoo_price(&self, symbol: &str) -> f64 {
         let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}", symbol);
         let response = match self.fetch_with_retry(&url).await {
             Ok(resp) => resp,
             Err(e) => {
-                eprintln!("WARN: Failed to fetch price for {}: {}", symbol, e);
+                eprintln!("WARN: Failed to fetch Yahoo price for {}: {}", symbol, e);
                 return 0.0;
             }
         };
 
         let status = response.status();
-        let content_type = response.headers().get("content-type").map(|v| v.to_str().unwrap_or("unknown")).unwrap_or("unknown").to_string();
-
         if !status.is_success() {
             let body_preview = response.text().await.unwrap_or_default();
             eprintln!(
-                "WARN: Yahoo Finance returned status {} for symbol {}. Body: {}",
-                status,
-                symbol,
+                "WARN: Yahoo Finance returned status {} for {}. Body: {}",
+                status, symbol,
                 &body_preview[..body_preview.len().min(500)]
             );
             return 0.0;
@@ -217,21 +246,18 @@ impl CurrencyService {
         let body_bytes = match response.bytes().await {
             Ok(b) => b,
             Err(e) => {
-                eprintln!("WARN: Failed to read response body for {}: {}", symbol, e);
+                eprintln!("WARN: Failed to read Yahoo response for {}: {}", symbol, e);
                 return 0.0;
             }
         };
 
-        let body_preview = String::from_utf8_lossy(&body_bytes).to_string();
         let yahoo_resp: YahooChartResponse = match serde_json::from_slice(&body_bytes) {
             Ok(r) => r,
             Err(e) => {
+                let body_preview = String::from_utf8_lossy(&body_bytes);
                 eprintln!(
-                    "WARN: Failed to parse Yahoo response for {}: {}. Status: {}, Content-Type: {}, Body: {}",
-                    symbol,
-                    e,
-                    status,
-                    content_type,
+                    "WARN: Failed to parse Yahoo response for {}: {}. Body: {}",
+                    symbol, e,
                     &body_preview[..body_preview.len().min(500)]
                 );
                 return 0.0;
@@ -253,24 +279,49 @@ impl CurrencyService {
             }
         };
 
-        let price = close_prices.iter().rev().find_map(|x| *x).unwrap_or(0.0);
-        if price == 0.0 {
-            eprintln!("WARN: No valid close price for symbol: {}", symbol);
+        close_prices.iter().rev().find_map(|x| *x).unwrap_or(0.0)
+    }
+
+    async fn fetch_eodhd_price(&self, isin: &str, api_key: &str) -> f64 {
+        let url = format!(
+            "https://eodhd.com/api/search/{}?api_token={}&fmt=json",
+            isin, api_key
+        );
+
+        let response = match self.fetch_with_retry(&url).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("WARN: EODHD search failed for {}: {}", isin, e);
+                return 0.0;
+            }
+        };
+
+        let status = response.status();
+        if !status.is_success() {
+            eprintln!("WARN: EODHD returned status {} for {}", status, isin);
             return 0.0;
         }
 
-        // 3. Cache in historical_prices table
-        let today = chrono::Utc::now().date_naive();
+        let results: Vec<EodhdSearchResult> = match response.json().await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("WARN: Failed to parse EODHD response for {}: {}", isin, e);
+                return 0.0;
+            }
+        };
+
+        results.first().and_then(|r| r.previous_close).unwrap_or(0.0)
+    }
+
+    async fn cache_price(&self, symbol: &str, date: NaiveDate, price: f64, pool: &SqlitePool) {
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
         )
         .bind(symbol)
-        .bind(today)
+        .bind(date)
         .bind(price)
         .execute(pool)
         .await;
-
-        price
     }
 
     /// Fetches historical daily close prices for a symbol from Yahoo Finance.
@@ -479,7 +530,7 @@ mod tests {
         .await;
 
         let svc = CurrencyService::new();
-        let price = svc.get_price("TEST", &pool).await;
+        let price = svc.get_price("TEST", None, &pool).await;
         assert!((price - 42.0).abs() < f64::EPSILON);
     }
 
@@ -503,7 +554,7 @@ mod tests {
 
         let svc = CurrencyService::new();
         // Should not return stale price (99.0) - falls through to Yahoo fetch
-        let price = svc.get_price("TEST", &pool).await;
+        let price = svc.get_price("TEST", None, &pool).await;
         assert!((price - 99.0).abs() > f64::EPSILON, "should not return stale cached price");
     }
 

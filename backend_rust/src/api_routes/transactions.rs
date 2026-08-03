@@ -2,6 +2,7 @@ use rocket::{State, serde::json::Json, http::Status};
 use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction};
 use crate::schemas::{AssetCreate, AssetOut, AssetUpdate, TransactionCreate, TransactionOut};
+use crate::api_routes::lookup::is_valid_isin;
 use crate::services::currency_service::CurrencyService;
 
 #[utoipa::path(
@@ -33,6 +34,22 @@ pub async fn create_asset(
         return Err(Status::BadRequest);
     }
 
+    if !asset.isin.is_empty() {
+        let isin_upper = asset.isin.to_uppercase();
+        if !is_valid_isin(&isin_upper) {
+            return Err(Status::BadRequest);
+        }
+        let isin_exists = sqlx::query_as::<_, (i32,)>("SELECT id FROM assets WHERE portfolio_id = ? AND isin = ?")
+            .bind(portfolio_id)
+            .bind(&isin_upper)
+            .fetch_optional(pool.inner())
+            .await
+            .map_err(|_| Status::InternalServerError)?;
+        if isin_exists.is_some() {
+            return Err(Status::Conflict);
+        }
+    }
+
     let resolved_currency = if asset.currency.is_empty() {
         CurrencyService::detect_currency(&asset.symbol)
     } else {
@@ -40,8 +57,8 @@ pub async fn create_asset(
     };
 
     let res = sqlx::query_as::<_, Asset>(
-        "INSERT INTO assets (portfolio_id, symbol, name, asset_type, sector, currency) 
-         VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
+        "INSERT INTO assets (portfolio_id, symbol, name, asset_type, sector, currency, isin) 
+         VALUES (?, ?, ?, ?, ?, ?, ?) RETURNING *"
     )
     .bind(portfolio_id)
     .bind(asset.symbol.to_uppercase())
@@ -49,6 +66,7 @@ pub async fn create_asset(
     .bind(asset.asset_type.to_uppercase())
     .bind(&asset.sector)
     .bind(&resolved_currency)
+    .bind(if asset.isin.is_empty() { None } else { Some(asset.isin.to_uppercase()) })
     .fetch_one(pool.inner())
     .await
     .map_err(|_| Status::InternalServerError)?;
@@ -61,6 +79,7 @@ pub async fn create_asset(
         asset_type: res.asset_type,
         sector: res.sector,
         currency: res.currency,
+        isin: res.isin,
         transactions: vec![],
     }))
 }
@@ -106,6 +125,7 @@ pub async fn update_asset(
             asset_type: a.asset_type,
             sector: a.sector,
             currency: a.currency,
+            isin: a.isin,
             transactions: vec![],
         })),
         None => Err(Status::NotFound),

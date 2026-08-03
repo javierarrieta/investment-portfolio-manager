@@ -9,6 +9,7 @@ pub mod api_routes {
     pub mod portfolios;
     pub mod transactions;
     pub mod analytics;
+    pub mod lookup;
 }
 
 use rocket::{Rocket, Build};
@@ -70,8 +71,29 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         asset_type TEXT NOT NULL,
         sector TEXT,
         currency TEXT NOT NULL DEFAULT 'USD',
+        isin TEXT,
         FOREIGN KEY (portfolio_id) REFERENCES portfolios(id)
     )").execute(pool).await?;
+
+    let column_exists: (i64,) = sqlx::query_as(
+        "SELECT COUNT(*) FROM pragma_table_info('assets') WHERE name = 'isin'"
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap_or((0,));
+
+    if column_exists.0 == 0 {
+        if let Err(e) = sqlx::query("ALTER TABLE assets ADD COLUMN isin TEXT")
+            .execute(pool)
+            .await
+        {
+            eprintln!("WARN: Failed to add isin column to assets table: {}", e);
+        }
+    }
+
+    let _ = sqlx::query("DROP INDEX IF EXISTS idx_assets_isin")
+        .execute(pool)
+        .await;
 
     sqlx::query("CREATE TABLE IF NOT EXISTS transactions (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -113,6 +135,7 @@ pub fn build_rocket(pool: SqlitePool, currency_service: CurrencyService, cors: C
             api_routes::analytics::get_portfolio_performance,
         ])
         .mount("/api", routes![
+            api_routes::lookup::lookup_isin,
             api_routes::transactions::create_asset,
             api_routes::transactions::update_asset,
             api_routes::transactions::delete_asset,

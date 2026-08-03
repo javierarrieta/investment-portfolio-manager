@@ -115,6 +115,9 @@ impl StatsEngine {
         };
 
         let symbols: Vec<String> = assets.iter().map(|a| a.symbol.clone()).collect();
+        let symbol_isin: HashMap<&str, Option<&str>> = assets.iter()
+            .map(|a| (a.symbol.as_str(), a.isin.as_deref()))
+            .collect();
 
         let mut price_map: HashMap<(NaiveDate, String), f64> = HashMap::new();
         for symbol in &symbols {
@@ -158,7 +161,8 @@ impl StatsEngine {
         for symbol in &symbols {
             let has_prices = price_map.keys().any(|(_, s)| s == symbol);
             if !has_prices {
-                let current_price = currency_service.get_price(symbol, pool).await;
+                let isin = symbol_isin.get(symbol.as_str()).and_then(|&i| i);
+                let current_price = currency_service.get_price(symbol, isin, pool).await;
                 if current_price > 0.0 {
                     for date in &dates {
                         price_map.insert((*date, symbol.clone()), current_price);
@@ -261,6 +265,7 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: None,
             currency: "USD".to_string(),
+            isin: None,
         }
     }
 
@@ -340,6 +345,7 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: None,
             currency: "CHF".to_string(),
+            isin: None,
         };
         let tx = Transaction {
             id: 1,
@@ -432,6 +438,7 @@ mod tests {
             asset_type: "STOCK".to_string(),
             sector: None,
             currency: "USD".to_string(),
+            isin: None,
         };
         let tx = Transaction {
             id: 1,

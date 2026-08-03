@@ -17,7 +17,8 @@ async fn test_create_asset() {
         "name": "Apple Inc",
         "asset_type": "STOCK",
         "sector": "Technology",
-        "currency": "USD"
+        "currency": "USD",
+        "isin": "US0378331005"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -36,6 +37,7 @@ async fn test_create_asset() {
     assert_eq!(parsed["asset_type"], "STOCK");
     assert_eq!(parsed["sector"], "Technology");
     assert_eq!(parsed["currency"], "USD");
+    assert_eq!(parsed["isin"], "US0378331005");
     assert!(parsed["transactions"].is_array());
     assert_eq!(parsed["transactions"].as_array().unwrap().len(), 0);
 }
@@ -53,7 +55,8 @@ async fn test_create_duplicate_asset_returns_400() {
         "name": "Apple Inc",
         "asset_type": "STOCK",
         "sector": null,
-        "currency": "USD"
+        "currency": "USD",
+        "isin": "US0378331005"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -287,7 +290,8 @@ async fn test_create_asset_currency_detection_fallback() {
         "name": "SAP SE",
         "asset_type": "STOCK",
         "sector": "Technology",
-        "currency": ""
+        "currency": "",
+        "isin": "DE000BAY0017"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -301,6 +305,7 @@ async fn test_create_asset_currency_detection_fallback() {
     let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
     assert_eq!(parsed["symbol"], "SAP.DE");
     assert_eq!(parsed["currency"], "EUR");
+    assert_eq!(parsed["isin"], "DE000BAY0017");
 }
 
 #[tokio::test]
@@ -315,7 +320,8 @@ async fn test_create_asset_null_sector() {
         "name": "Bitcoin",
         "asset_type": "CRYPTO",
         "sector": null,
-        "currency": "USD"
+        "currency": "USD",
+        "isin": "BTC123456789"
     }));
 
     let resp = client.post(format!("/api/portfolios/{}/assets", port_id))
@@ -329,6 +335,7 @@ async fn test_create_asset_null_sector() {
     let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
     assert_eq!(parsed["symbol"], "BTC-USD");
     assert_eq!(parsed["sector"], serde_json::Value::Null);
+    assert_eq!(parsed["isin"], "BTC123456789");
     assert!(parsed["id"].is_number());
 }
 
