@@ -23,7 +23,7 @@ pub struct AssetLookupResult {
         (status = 404, description = "ISIN not found")
     )
 )]
-#[get("/lookup?<isin>")]
+#[get("/assets/lookup?<isin>")]
 pub async fn lookup_isin(
     isin: String,
 ) -> Result<Json<AssetLookupResult>, Status> {
