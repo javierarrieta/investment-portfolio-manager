@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { DollarSign, ArrowUpRight, ArrowDownRight, Briefcase, TrendingUp } from 'lucide-react';
 import { formatCurrency, formatPercent } from '../utils/formatters';
+import { toNumber } from '../utils/decimal';
 import { PortfolioPerformance, TaxSummary } from '../types';
 
 const COLORS = ['#6366f1', '#a855f7', '#f59e0b', '#10b981', '#ec4899'];
@@ -35,9 +36,9 @@ export default function Dashboard({
   }
 
   const { metrics, history } = performance;
-  const totalValue = taxSummary.total_portfolio_value || metrics.portfolio_value;
-  const realizedPnl = taxSummary.total_realized_pnl || metrics.realized_pnl || 0;
-  const unrealizedPnl = taxSummary.total_unrealized_pnl || metrics.unrealized_pnl || 0;
+  const totalValue = toNumber(taxSummary.total_portfolio_value) || toNumber(metrics.portfolio_value);
+  const realizedPnl = toNumber(taxSummary.total_realized_pnl) || toNumber(metrics.realized_pnl) || 0;
+  const unrealizedPnl = toNumber(taxSummary.total_unrealized_pnl) || toNumber(metrics.unrealized_pnl) || 0;
   const totalGains = realizedPnl + unrealizedPnl;
 
   const displayCurrency = taxSummary.currency || 'USD';
