@@ -4,8 +4,6 @@ use crate::models::{Asset, Transaction};
 use crate::schemas::{AssetCreate, AssetOut, AssetUpdate, TransactionCreate, TransactionOut};
 use crate::api_routes::lookup::is_valid_isin;
 use crate::services::currency_service::CurrencyService;
-use rust_decimal::Decimal;
-use std::str::FromStr;
 
 #[utoipa::path(
     post,
@@ -209,9 +207,9 @@ pub async fn create_transaction(
         id: res.id,
         asset_id: res.asset_id,
         r#type: res.r#type,
-        quantity: Decimal::from_str(&res.quantity).unwrap_or(Decimal::ZERO),
-        price: Decimal::from_str(&res.price).unwrap_or(Decimal::ZERO),
-        fee: Decimal::from_str(&res.fee).unwrap_or(Decimal::ZERO),
+        quantity: crate::db_types::str_to_decimal(&res.quantity),
+        price: crate::db_types::str_to_decimal(&res.price),
+        fee: crate::db_types::str_to_decimal(&res.fee),
         date: res.date,
     }))
 }
@@ -254,9 +252,9 @@ pub async fn list_portfolio_transactions(portfolio_id: i32, pool: &State<SqliteP
         id: t.id,
         asset_id: t.asset_id,
         r#type: t.r#type,
-        quantity: Decimal::from_str(&t.quantity).unwrap_or(Decimal::ZERO),
-        price: Decimal::from_str(&t.price).unwrap_or(Decimal::ZERO),
-        fee: Decimal::from_str(&t.fee).unwrap_or(Decimal::ZERO),
+        quantity: crate::db_types::str_to_decimal(&t.quantity),
+        price: crate::db_types::str_to_decimal(&t.price),
+        fee: crate::db_types::str_to_decimal(&t.fee),
         date: t.date,
     }).collect();
 

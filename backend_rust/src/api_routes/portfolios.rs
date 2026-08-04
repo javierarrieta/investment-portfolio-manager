@@ -1,8 +1,6 @@
 use rocket::{State, serde::json::Json, http::Status};
 use sqlx::SqlitePool;
 use std::collections::HashMap;
-use std::str::FromStr;
-use rust_decimal::Decimal;
 use crate::models::{Portfolio as DbPortfolio, Asset as DbAsset, Transaction as DbTransaction};
 use crate::schemas::{AssetOut, PortfolioCreate, PortfolioOut, PortfolioUpdate, TransactionOut};
 
@@ -75,9 +73,9 @@ async fn fetch_assets_for_portfolio(pool: &sqlx::sqlite::SqlitePool, portfolio_i
                 id: tx.id,
                 asset_id: tx.asset_id,
                 r#type: tx.r#type,
-                quantity: Decimal::from_str(&tx.quantity).unwrap_or(Decimal::ZERO),
-                price: Decimal::from_str(&tx.price).unwrap_or(Decimal::ZERO),
-                fee: Decimal::from_str(&tx.fee).unwrap_or(Decimal::ZERO),
+                quantity: crate::db_types::str_to_decimal(&tx.quantity),
+                price: crate::db_types::str_to_decimal(&tx.price),
+                fee: crate::db_types::str_to_decimal(&tx.fee),
                 date: tx.date,
             });
     }

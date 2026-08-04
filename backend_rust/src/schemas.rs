@@ -2,7 +2,6 @@ use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
 use rust_decimal::Decimal;
-use std::str::FromStr;
 use crate::db_types::decimal_json;
 
 // --- Transaction ---
@@ -129,6 +128,7 @@ pub struct AssetTaxSummary {
 mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
+    use std::str::FromStr;
 
     fn sample_datetime() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2025-01-15T10:30:00Z").unwrap().with_timezone(&Utc)
@@ -146,9 +146,9 @@ mod tests {
         let json = serde_json::to_string(&tx).unwrap();
         let deserialized: TransactionCreate = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.r#type, "BUY");
-        assert!((deserialized.quantity - Decimal::from_str("100.0").unwrap()).abs() < Decimal::from_str("0.01").unwrap());
-        assert!((deserialized.price - Decimal::from_str("150.5").unwrap()).abs() < Decimal::from_str("0.01").unwrap());
-        assert!((deserialized.fee - Decimal::from_str("9.99").unwrap()).abs() < Decimal::from_str("0.01").unwrap());
+        assert_eq!(deserialized.quantity, Decimal::from_str("100.0").unwrap());
+        assert_eq!(deserialized.price, Decimal::from_str("150.5").unwrap());
+        assert_eq!(deserialized.fee, Decimal::from_str("9.99").unwrap());
     }
 
     #[test]
