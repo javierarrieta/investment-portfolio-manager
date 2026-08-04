@@ -28,10 +28,10 @@ pub struct Asset {
 pub struct Transaction {
     pub id: i32,
     pub asset_id: i32,
-    pub r#type: String, // 'type' is a keyword in Rust
-    pub quantity: f64,
-    pub price: f64,
-    pub fee: f64,
+    pub r#type: String,
+    pub quantity: String,
+    pub price: String,
+    pub fee: String,
     pub date: DateTime<Utc>,
 }
 
@@ -39,7 +39,7 @@ pub struct Transaction {
 pub struct HistoricalPrice {
     pub symbol: String,
     pub date: NaiveDate,
-    pub close_price: f64,
+    pub close_price: String,
 }
 
 #[cfg(test)]
@@ -90,15 +90,15 @@ mod tests {
             id: 1,
             asset_id: 1,
             r#type: "BUY".to_string(),
-            quantity: 50.0,
-            price: 200.0,
-            fee: 5.0,
+            quantity: "50.0".to_string(),
+            price: "200.0".to_string(),
+            fee: "5.0".to_string(),
             date: sample_dt(),
         };
         let json = serde_json::to_string(&tx).unwrap();
         let deserialized: Transaction = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.r#type, "BUY");
-        assert!((deserialized.quantity - 50.0).abs() < f64::EPSILON);
+        assert_eq!(deserialized.quantity, "50.0");
     }
 
     #[test]
@@ -106,11 +106,11 @@ mod tests {
         let hp = HistoricalPrice {
             symbol: "SPY".to_string(),
             date: NaiveDate::from_ymd_opt(2025, 1, 15).unwrap(),
-            close_price: 480.5,
+            close_price: "480.5".to_string(),
         };
         let json = serde_json::to_string(&hp).unwrap();
         let deserialized: HistoricalPrice = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "SPY");
-        assert!((deserialized.close_price - 480.5).abs() < f64::EPSILON);
+        assert_eq!(deserialized.close_price, "480.5");
     }
 }

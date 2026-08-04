@@ -4,6 +4,7 @@ use crate::models::{Portfolio, Asset, Transaction};
 use crate::services::currency_service::CurrencyService;
 use crate::engines::tax_engine::TaxLotEngine;
 use crate::engines::stats_engine::StatsEngine;
+use rust_decimal::Decimal;
 use anyhow::Result;
 
 #[utoipa::path(
@@ -38,16 +39,16 @@ pub async fn get_portfolio_tax_summary(
     if assets.is_empty() {
         return Ok(Json(serde_json::json!({
             "assets": [],
-            "total_portfolio_value": 0.0,
-            "total_realized_pnl": 0.0,
-            "total_unrealized_pnl": 0.0
+            "total_portfolio_value": "0",
+            "total_realized_pnl": "0",
+            "total_unrealized_pnl": "0"
         })));
     }
 
     let mut asset_summaries = Vec::new();
-    let mut total_value = 0.0;
-    let mut total_realized = 0.0;
-    let mut total_unrealized = 0.0;
+    let mut total_value = Decimal::ZERO;
+    let mut total_realized = Decimal::ZERO;
+    let mut total_unrealized = Decimal::ZERO;
 
     let strategy_val = strategy.unwrap_or_else(|| "FIFO".to_string());
     let threshold_val = threshold_days.unwrap_or(30);
@@ -59,7 +60,7 @@ pub async fn get_portfolio_tax_summary(
             .await
             .map_err(|_| Status::InternalServerError)?;
 
-        let current_price = currency_service.get_price(&asset.symbol, asset.isin.as_deref(), pool.inner()).await; 
+        let current_price = currency_service.get_price(&asset.symbol, asset.isin.as_deref(), pool.inner()).await;
 
         let summary = TaxLotEngine::calculate_lots(
             &asset.symbol,
@@ -81,9 +82,9 @@ pub async fn get_portfolio_tax_summary(
 
     Ok(Json(serde_json::json!({
         "assets": asset_summaries,
-        "total_portfolio_value": total_value,
-        "total_realized_pnl": total_realized,
-        "total_unrealized_pnl": total_unrealized,
+        "total_portfolio_value": total_value.to_string(),
+        "total_realized_pnl": total_realized.to_string(),
+        "total_unrealized_pnl": total_unrealized.to_string(),
         "strategy": strategy_val,
         "threshold_days": threshold_val,
         "currency": portfolio.base_currency,

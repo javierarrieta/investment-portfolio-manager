@@ -1,5 +1,6 @@
 #[macro_use] extern crate rocket;
 
+pub mod db_types;
 pub mod models;
 pub mod schemas;
 pub mod services;
@@ -99,9 +100,9 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         asset_id INTEGER NOT NULL,
         type TEXT NOT NULL,
-        quantity REAL NOT NULL,
-        price REAL NOT NULL,
-        fee REAL NOT NULL,
+        quantity TEXT NOT NULL,
+        price TEXT NOT NULL,
+        fee TEXT NOT NULL,
         date TEXT NOT NULL,
         FOREIGN KEY (asset_id) REFERENCES assets(id)
     )").execute(pool).await?;
@@ -109,7 +110,7 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (
         symbol TEXT NOT NULL,
         date DATE NOT NULL,
-        close_price REAL NOT NULL
+        close_price TEXT NOT NULL
     )").execute(pool).await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_historical_prices_symbol_date ON historical_prices(symbol, date)")
