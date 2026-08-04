@@ -107,4 +107,15 @@ mod tests {
         let res = serde_json::from_str::<Wrap>(r#"{"d":"abc"}"#);
         assert!(res.is_err());
     }
+
+    #[test]
+    fn str_to_decimal_returns_zero_with_warning_on_bad_input() {
+        assert_eq!(str_to_decimal("not-a-number"), Decimal::ZERO);
+    }
+
+    #[test]
+    fn invalid_type_triggers_expecting() {
+        let res = serde_json::from_str::<Wrap>(r#"{"d":true}"#);
+        assert!(res.is_err());
+    }
 }
