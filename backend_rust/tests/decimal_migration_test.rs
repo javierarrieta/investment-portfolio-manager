@@ -122,6 +122,49 @@ async fn migration_recovers_partial_rename_state() {
 }
 
 #[tokio::test]
+async fn migration_works_on_file_backed_database() {
+    // The motivating bug (duplicate column name after ALTER) only manifests on
+    // file-backed SQLite databases because of a stale per-connection schema cache.
+    // `:memory:` connections hide it, so guard the file-backed code path explicitly.
+    let tmp = std::env::temp_dir().join(format!(
+        "portfolio_migration_test_{}.db",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&tmp);
+
+    let url = format!("sqlite:{}?mode=rwc", tmp.display());
+    let pool = SqlitePool::connect(&url).await.unwrap();
+    create_legacy_schema(&pool).await;
+
+    backend_rust::migrate_decimal_columns(&pool).await.unwrap();
+
+    assert_eq!(column_affinity(&pool, "transactions", "quantity").await, "TEXT");
+    assert_eq!(column_affinity(&pool, "transactions", "price").await, "TEXT");
+    assert_eq!(column_affinity(&pool, "transactions", "fee").await, "TEXT");
+    assert_eq!(column_affinity(&pool, "historical_prices", "close_price").await, "TEXT");
+
+    let (qty, price, fee): (String, String, String) =
+        sqlx::query_as("SELECT quantity, price, fee FROM transactions WHERE id = 1")
+            .fetch_one(&pool).await.unwrap();
+    assert_eq!(str_to_decimal(&qty), rust_decimal::Decimal::from_str("100.0").unwrap());
+    assert_eq!(str_to_decimal(&price), rust_decimal::Decimal::from_str("9.99").unwrap());
+    assert_eq!(str_to_decimal(&fee), rust_decimal::Decimal::from_str("0.0").unwrap());
+
+    let (close,): (String,) = sqlx::query_as(
+        "SELECT close_price FROM historical_prices WHERE symbol = 'AAPL'",
+    )
+    .fetch_one(&pool).await.unwrap();
+    assert_eq!(str_to_decimal(&close), rust_decimal::Decimal::from_str("9.99").unwrap());
+
+    let info: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as("PRAGMA table_info(transactions)").fetch_all(&pool).await.unwrap();
+    assert!(!info.iter().any(|r| r.1.ends_with("_old")), "no _old columns should remain");
+
+    pool.close().await;
+    let _ = std::fs::remove_file(&tmp);
+}
+
+#[tokio::test]
 async fn migration_recovers_text_plus_leftover_old() {
     // simulate crash between ADD and DROP: column is TEXT, _old still present.
     let pool = SqlitePool::connect(":memory:").await.unwrap();
