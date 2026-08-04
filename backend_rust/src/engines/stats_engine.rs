@@ -67,7 +67,7 @@ impl StatsEngine {
                         "date": date,
                         "value": value.to_string(),
                         "daily_return": "0.0",
-                        "twr": "0.0",
+                        "twr": (twr_acc - 1.0).to_string(),
                     }));
                     continue;
                 }
@@ -198,10 +198,10 @@ impl StatsEngine {
                 let symbol = assets.iter().find(|a| a.id == tx.asset_id).map(|a| a.symbol.as_str()).unwrap_or("");
                 let entry = asset_qtys.entry(symbol.to_string()).or_insert(Decimal::ZERO);
                 if tx.r#type.to_uppercase() == "BUY" {
-                    let tx_qty = Decimal::from_str(&tx.quantity).unwrap_or(Decimal::ZERO);
+                    let tx_qty = crate::db_types::str_to_decimal(&tx.quantity);
                     *entry += tx_qty;
                 } else if tx.r#type.to_uppercase() == "SELL" {
-                    let tx_qty = Decimal::from_str(&tx.quantity).unwrap_or(Decimal::ZERO);
+                    let tx_qty = crate::db_types::str_to_decimal(&tx.quantity);
                     *entry = (*entry - tx_qty).max(Decimal::ZERO);
                 }
                 tx_idx += 1;
@@ -426,6 +426,33 @@ mod tests {
         let week2 = &weekly[1];
         assert_eq!(week2.get("value").unwrap().as_str().unwrap(), "112.0");
         assert_eq!(week2.get("date").unwrap().as_str().unwrap(), "2024-01-09");
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_weekly_carries_twr_across_zero_value_week() {
+        // aggregate_weekly computes each week's return against the *previous*
+        // week's value, so the very first week always yields twr 0. The test
+        // therefore uses a leading baseline week so the following week builds a
+        // real return (0.10), then a holiday (zero-value) week that must carry
+        // that twr forward (not reset to 0.0).
+        let daily_history = vec![
+            // week A (2023): baseline, establishes prev_value = 100
+            serde_json::json!({"date":"2023-12-25","value":"100.0","daily_return":"0.0","twr":"0.0"}),
+            // week1 (2024): gains to 110 -> twr 0.10
+            serde_json::json!({"date":"2024-01-02","value":"110.0","daily_return":"0.10","twr":"0.10"}),
+            // week2: holiday (value 0) -> must carry twr 0.10, not 0.0
+            serde_json::json!({"date":"2024-01-08","value":"0","daily_return":"0.0","twr":"0.0"}),
+            serde_json::json!({"date":"2024-01-15","value":"110.0","daily_return":"0.0","twr":"0.10"}),
+        ];
+        let weekly = StatsEngine::aggregate_weekly(daily_history).await;
+        // week A = index 0, week1 = index 1, holiday = index 2
+        // holiday must carry forward the accumulated twr (same string as the
+        // prior gain week) rather than resetting to a zero value.
+        let holiday_twr = weekly[2].get("twr").unwrap().as_str().unwrap();
+        let gain_twr = weekly[1].get("twr").unwrap().as_str().unwrap();
+        assert_eq!(holiday_twr, gain_twr);
+        assert_ne!(holiday_twr, "0.0");
+        assert_ne!(holiday_twr, "0");
     }
 
     #[tokio::test]

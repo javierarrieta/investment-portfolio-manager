@@ -2,7 +2,6 @@ use crate::models::Transaction;
 use crate::schemas::{TaxLot, AssetTaxSummary};
 use crate::services::currency_service::CurrencyService;
 use rust_decimal::Decimal;
-use std::str::FromStr;
 use chrono::{DateTime, Utc};
 use anyhow::Result;
 
@@ -11,6 +10,7 @@ mod tests {
     use super::*;
     use crate::services::currency_service::CurrencyService;
     use chrono::Utc as ChronoUtc;
+    use std::str::FromStr;
 
     fn make_tx(id: i32, tx_type: &str, qty: &str, price: &str, fee: &str, date_str: &str) -> Transaction {
         Transaction {
@@ -196,9 +196,9 @@ impl TaxLotEngine {
                 Decimal::ONE
             };
 
-            let tx_qty = Decimal::from_str(&tx.quantity).unwrap_or(Decimal::ZERO);
-            let tx_price = Decimal::from_str(&tx.price).unwrap_or(Decimal::ZERO);
-            let tx_fee = Decimal::from_str(&tx.fee).unwrap_or(Decimal::ZERO);
+            let tx_qty = crate::db_types::str_to_decimal(&tx.quantity);
+            let tx_price = crate::db_types::str_to_decimal(&tx.price);
+            let tx_fee = crate::db_types::str_to_decimal(&tx.fee);
 
             if tx.r#type.to_uppercase() == "BUY" {
                 let unit_cost_asset = if tx_qty > Decimal::ZERO {
