@@ -18,6 +18,7 @@ export interface paths {
   "/api/portfolios/<id>": {
     get: operations["get_portfolio"];
     delete: operations["delete_portfolio"];
+    patch: operations["update_portfolio"];
   };
   "/api/portfolios/<id>/performance": {
     get: operations["get_portfolio_performance"];
@@ -58,13 +59,19 @@ export interface components {
     AssetCreate: {
       asset_type: string;
       currency: string;
-      isin: string;
+      isin?: string;
       name: string;
       sector?: string | null;
       symbol: string;
     };
+    AssetLookupResult: {
+      asset_type: string;
+      name: string;
+      symbol: string;
+    };
     AssetOut: {
       asset_type: string;
+      currency: string;
       /** Format: int32 */
       id: number;
       isin?: string | null;
@@ -77,30 +84,16 @@ export interface components {
     };
     AssetTaxSummary: {
       asset_type: string;
-      /** Format: double */
-      average_cost: number;
-      /** Format: double */
-      current_price: number;
-      /** Format: double */
-      current_shares: number;
-      /** Format: double */
-      market_value: number;
-      /** Format: double */
-      realized_pnl: number;
+      average_cost: components["schemas"]["Decimal"];
+      current_price: components["schemas"]["Decimal"];
+      current_shares: components["schemas"]["Decimal"];
+      market_value: components["schemas"]["Decimal"];
+      realized_pnl: components["schemas"]["Decimal"];
       symbol: string;
       tax_lots: components["schemas"]["TaxLot"][];
-      /** Format: double */
-      total_cost: number;
-      /** Format: double */
-      unrealized_pnl: number;
-      /** Format: double */
-      unrealized_roi: number;
-    };
-    AssetLookupResult: {
-      asset_type: string;
-      currency: string;
-      name: string;
-      symbol: string;
+      total_cost: components["schemas"]["Decimal"];
+      unrealized_pnl: components["schemas"]["Decimal"];
+      unrealized_roi: components["schemas"]["Decimal"];
     };
     Portfolio: {
       base_currency: string;
@@ -125,53 +118,39 @@ export interface components {
     };
     TaxLot: {
       buy_date: components["schemas"]["DateTime"];
-      /** Format: double */
-      buy_price: number;
-      /** Format: double */
-      latent_gain_loss: number;
-      /** Format: double */
-      latent_roi: number;
-      /** Format: double */
-      original_qty: number;
-      /** Format: double */
-      remaining_qty: number;
+      buy_price: components["schemas"]["Decimal"];
+      latent_gain_loss: components["schemas"]["Decimal"];
+      latent_roi: components["schemas"]["Decimal"];
+      original_qty: components["schemas"]["Decimal"];
+      remaining_qty: components["schemas"]["Decimal"];
     };
     Transaction: {
       /** Format: int32 */
       asset_id: number;
       date: components["schemas"]["DateTime"];
-      /** Format: double */
-      fee: number;
+      fee: string;
       /** Format: int32 */
       id: number;
-      /** Format: double */
-      price: number;
-      /** Format: double */
-      quantity: number;
+      price: string;
+      quantity: string;
       type: string;
     };
     TransactionCreate: {
       date: components["schemas"]["DateTime"];
-      /** Format: double */
-      fee: number;
-      /** Format: double */
-      price: number;
-      /** Format: double */
-      quantity: number;
+      fee: components["schemas"]["Decimal"];
+      price: components["schemas"]["Decimal"];
+      quantity: components["schemas"]["Decimal"];
       type: string;
     };
     TransactionOut: {
       /** Format: int32 */
       asset_id: number;
       date: components["schemas"]["DateTime"];
-      /** Format: double */
-      fee: number;
+      fee: components["schemas"]["Decimal"];
       /** Format: int32 */
       id: number;
-      /** Format: double */
-      price: number;
-      /** Format: double */
-      quantity: number;
+      price: components["schemas"]["Decimal"];
+      quantity: components["schemas"]["Decimal"];
       type: string;
     };
   };
@@ -188,9 +167,27 @@ export type external = Record<string, never>;
 
 export interface operations {
 
+  delete_asset: {
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+    responses: {
+      /** @description Asset deleted */
+      204: {
+        content: never;
+      };
+      /** @description Asset not found */
+      404: {
+        content: never;
+      };
+    };
+  };
   lookup_isin: {
     parameters: {
       query: {
+        /** @description ISIN to look up (12 alphanumeric characters) */
         isin: string;
       };
     };
@@ -206,24 +203,6 @@ export interface operations {
         content: never;
       };
       /** @description ISIN not found */
-      404: {
-        content: never;
-      };
-    };
-  };
-
-  delete_asset: {
-    parameters: {
-      path: {
-        id: number;
-      };
-    };
-    responses: {
-      /** @description Asset deleted */
-      204: {
-        content: never;
-      };
-      /** @description Asset not found */
       404: {
         content: never;
       };
@@ -287,6 +266,30 @@ export interface operations {
       /** @description Portfolio deleted */
       204: {
         content: never;
+      };
+      /** @description Portfolio not found */
+      404: {
+        content: never;
+      };
+    };
+  };
+  update_portfolio: {
+    parameters: {
+      path: {
+        id: number;
+      };
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["PortfolioUpdate"];
+      };
+    };
+    responses: {
+      /** @description Portfolio updated */
+      200: {
+        content: {
+          "application/json": components["schemas"]["PortfolioOut"];
+        };
       };
       /** @description Portfolio not found */
       404: {
