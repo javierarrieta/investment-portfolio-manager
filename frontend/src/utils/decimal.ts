@@ -1,5 +1,5 @@
 import type {
-  HistoryItem, PerformanceMetrics, TaxSummary, Transaction,
+  HistoryItem, PerformanceMetrics, PortfolioPerformance, TaxSummary, Transaction,
 } from '../types';
 
 export type DecimalLike = string | number | null | undefined;
