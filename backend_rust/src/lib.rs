@@ -117,7 +117,49 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    migrate_decimal_columns(pool).await?;
+
     Ok(())
+}
+
+async fn migrate_one_column(
+    pool: &SqlitePool,
+    table: &str,
+    column: &str,
+) -> Result<(), sqlx::Error> {
+    let rows: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as(&format!("PRAGMA table_info({table})"))
+            .fetch_all(pool)
+            .await?;
+    let current_affinity = rows.iter().find(|r| r.1 == column).map(|r| r.2.clone());
+    if current_affinity.as_deref() == Some("TEXT") || current_affinity.is_none() {
+        return Ok(());
+    }
+
+    sqlx::query(&format!("ALTER TABLE {table} RENAME COLUMN {column} TO {column}_old"))
+        .execute(pool)
+        .await?;
+    sqlx::query(&format!(
+        "ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT '0'"
+    ))
+    .execute(pool)
+    .await?;
+    sqlx::query(&format!(
+        "UPDATE {table} SET {column} = CAST({column}_old AS TEXT)"
+    ))
+    .execute(pool)
+    .await?;
+    sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {column}_old"))
+        .execute(pool)
+        .await?;
+    Ok(())
+}
+
+pub async fn migrate_decimal_columns(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    for column in ["quantity", "price", "fee"] {
+        migrate_one_column(pool, "transactions", column).await?;
+    }
+    migrate_one_column(pool, "historical_prices", "close_price").await
 }
 
 pub fn build_rocket(pool: SqlitePool, currency_service: CurrencyService, cors: Cors) -> Rocket<Build> {
