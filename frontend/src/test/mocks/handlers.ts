@@ -102,9 +102,9 @@ export const handlers = [
       id: 1000,
       asset_id: Number(assetId),
       type: body.type.toUpperCase(),
-      quantity: body.quantity,
-      price: body.price,
-      fee: body.fee,
+      quantity: String(body.quantity),
+      price: String(body.price),
+      fee: String(body.fee),
       date: body.date
     }, { status: 201 })
   }),

@@ -1,14 +1,19 @@
 use serde::{Serialize, Deserialize};
 use chrono::{DateTime, Utc};
 use utoipa::ToSchema;
+use rust_decimal::Decimal;
+use crate::db_types::decimal_json;
 
 // --- Transaction ---
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TransactionCreate {
     pub r#type: String,
-    pub quantity: f64,
-    pub price: f64,
-    pub fee: f64,
+    #[serde(with = "decimal_json")]
+    pub quantity: Decimal,
+    #[serde(with = "decimal_json")]
+    pub price: Decimal,
+    #[serde(with = "decimal_json")]
+    pub fee: Decimal,
     pub date: DateTime<Utc>,
 }
 
@@ -17,9 +22,12 @@ pub struct TransactionOut {
     pub id: i32,
     pub asset_id: i32,
     pub r#type: String,
-    pub quantity: f64,
-    pub price: f64,
-    pub fee: f64,
+    #[serde(with = "decimal_json")]
+    pub quantity: Decimal,
+    #[serde(with = "decimal_json")]
+    pub price: Decimal,
+    #[serde(with = "decimal_json")]
+    pub fee: Decimal,
     pub date: DateTime<Utc>,
 }
 
@@ -81,25 +89,38 @@ pub struct AssetUpdate {
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct TaxLot {
     pub buy_date: DateTime<Utc>,
-    pub buy_price: f64,
-    pub original_qty: f64,
-    pub remaining_qty: f64,
-    pub latent_gain_loss: f64,
-    pub latent_roi: f64,
+    #[serde(with = "decimal_json")]
+    pub buy_price: Decimal,
+    #[serde(with = "decimal_json")]
+    pub original_qty: Decimal,
+    #[serde(with = "decimal_json")]
+    pub remaining_qty: Decimal,
+    #[serde(with = "decimal_json")]
+    pub latent_gain_loss: Decimal,
+    #[serde(with = "decimal_json")]
+    pub latent_roi: Decimal,
 }
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
 pub struct AssetTaxSummary {
     pub symbol: String,
     pub asset_type: String,
-    pub current_shares: f64,
-    pub average_cost: f64,
-    pub current_price: f64,
-    pub total_cost: f64,
-    pub market_value: f64,
-    pub unrealized_pnl: f64,
-    pub unrealized_roi: f64,
-    pub realized_pnl: f64,
+    #[serde(with = "decimal_json")]
+    pub current_shares: Decimal,
+    #[serde(with = "decimal_json")]
+    pub average_cost: Decimal,
+    #[serde(with = "decimal_json")]
+    pub current_price: Decimal,
+    #[serde(with = "decimal_json")]
+    pub total_cost: Decimal,
+    #[serde(with = "decimal_json")]
+    pub market_value: Decimal,
+    #[serde(with = "decimal_json")]
+    pub unrealized_pnl: Decimal,
+    #[serde(with = "decimal_json")]
+    pub unrealized_roi: Decimal,
+    #[serde(with = "decimal_json")]
+    pub realized_pnl: Decimal,
     pub tax_lots: Vec<TaxLot>,
 }
 
@@ -107,6 +128,7 @@ pub struct AssetTaxSummary {
 mod tests {
     use super::*;
     use chrono::{DateTime, Utc};
+    use std::str::FromStr;
 
     fn sample_datetime() -> DateTime<Utc> {
         DateTime::parse_from_rfc3339("2025-01-15T10:30:00Z").unwrap().with_timezone(&Utc)
@@ -116,17 +138,17 @@ mod tests {
     fn test_transaction_create_roundtrip() {
         let tx = TransactionCreate {
             r#type: "BUY".to_string(),
-            quantity: 100.0,
-            price: 150.5,
-            fee: 9.99,
+            quantity: Decimal::from_str("100.0").unwrap(),
+            price: Decimal::from_str("150.5").unwrap(),
+            fee: Decimal::from_str("9.99").unwrap(),
             date: sample_datetime(),
         };
         let json = serde_json::to_string(&tx).unwrap();
         let deserialized: TransactionCreate = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.r#type, "BUY");
-        assert!((deserialized.quantity - 100.0).abs() < f64::EPSILON);
-        assert!((deserialized.price - 150.5).abs() < f64::EPSILON);
-        assert!((deserialized.fee - 9.99).abs() < f64::EPSILON);
+        assert_eq!(deserialized.quantity, Decimal::from_str("100.0").unwrap());
+        assert_eq!(deserialized.price, Decimal::from_str("150.5").unwrap());
+        assert_eq!(deserialized.fee, Decimal::from_str("9.99").unwrap());
     }
 
     #[test]
@@ -135,9 +157,9 @@ mod tests {
             id: 42,
             asset_id: 7,
             r#type: "SELL".to_string(),
-            quantity: 25.0,
-            price: 200.0,
-            fee: 5.0,
+            quantity: Decimal::from_str("25.0").unwrap(),
+            price: Decimal::from_str("200.0").unwrap(),
+            fee: Decimal::from_str("5.0").unwrap(),
             date: sample_datetime(),
         };
         let json = serde_json::to_string(&tx).unwrap();
@@ -221,16 +243,16 @@ mod tests {
     fn test_tax_lot_roundtrip() {
         let lot = TaxLot {
             buy_date: sample_datetime(),
-            buy_price: 150.0,
-            original_qty: 100.0,
-            remaining_qty: 75.0,
-            latent_gain_loss: 500.0,
-            latent_roi: 0.0444,
+            buy_price: Decimal::from_str("150.0").unwrap(),
+            original_qty: Decimal::from_str("100.0").unwrap(),
+            remaining_qty: Decimal::from_str("75.0").unwrap(),
+            latent_gain_loss: Decimal::from_str("500.0").unwrap(),
+            latent_roi: Decimal::from_str("0.0444").unwrap(),
         };
         let json = serde_json::to_string(&lot).unwrap();
         let deserialized: TaxLot = serde_json::from_str(&json).unwrap();
-        assert!((deserialized.remaining_qty - 75.0).abs() < f64::EPSILON);
-        assert!((deserialized.latent_gain_loss - 500.0).abs() < f64::EPSILON);
+        assert_eq!(deserialized.remaining_qty, Decimal::from_str("75.0").unwrap());
+        assert_eq!(deserialized.latent_gain_loss, Decimal::from_str("500.0").unwrap());
     }
 
     #[test]
@@ -238,20 +260,20 @@ mod tests {
         let summary = AssetTaxSummary {
             symbol: "AAPL".to_string(),
             asset_type: "STOCK".to_string(),
-            current_shares: 100.0,
-            average_cost: 150.0,
-            current_price: 160.0,
-            total_cost: 15000.0,
-            market_value: 16000.0,
-            unrealized_pnl: 1000.0,
-            unrealized_roi: 0.0667,
-            realized_pnl: 200.0,
+            current_shares: Decimal::from_str("100.0").unwrap(),
+            average_cost: Decimal::from_str("150.0").unwrap(),
+            current_price: Decimal::from_str("160.0").unwrap(),
+            total_cost: Decimal::from_str("15000.0").unwrap(),
+            market_value: Decimal::from_str("16000.0").unwrap(),
+            unrealized_pnl: Decimal::from_str("1000.0").unwrap(),
+            unrealized_roi: Decimal::from_str("0.0667").unwrap(),
+            realized_pnl: Decimal::from_str("200.0").unwrap(),
             tax_lots: vec![],
         };
         let json = serde_json::to_string(&summary).unwrap();
         let deserialized: AssetTaxSummary = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized.symbol, "AAPL");
-        assert!((deserialized.unrealized_pnl - 1000.0).abs() < f64::EPSILON);
+        assert_eq!(deserialized.unrealized_pnl, Decimal::from_str("1000.0").unwrap());
     }
 
     #[test]

@@ -96,9 +96,9 @@ async fn test_create_transaction() {
     assert_eq!(parsed["type"], "BUY");
     assert!(parsed["id"].is_number());
     assert_eq!(parsed["asset_id"], asset_id);
-    assert!((parsed["quantity"].as_f64().unwrap() - 10.0).abs() < f64::EPSILON);
-    assert!((parsed["price"].as_f64().unwrap() - 150.0).abs() < f64::EPSILON);
-    assert!((parsed["fee"].as_f64().unwrap() - 5.0).abs() < f64::EPSILON);
+    assert_eq!(parsed["quantity"], "10");
+    assert_eq!(parsed["price"], "150");
+    assert_eq!(parsed["fee"], "5");
     assert!(parsed["date"].is_string());
 }
 
@@ -147,9 +147,9 @@ async fn test_list_portfolio_transactions() {
     assert!(tx0["id"].is_number());
     assert_eq!(tx0["asset_id"], asset_id);
     assert!(tx0["type"].is_string());
-    assert!(tx0["quantity"].is_number());
-    assert!(tx0["price"].is_number());
-    assert!(tx0["fee"].is_number());
+    assert_eq!(tx0["quantity"], "50.0");
+    assert_eq!(tx0["price"], "300.0");
+    assert_eq!(tx0["fee"], "10.0");
     assert!(tx0["date"].is_string());
 }
 

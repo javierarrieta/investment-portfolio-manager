@@ -2,6 +2,8 @@ use chrono::{Datelike, NaiveDate, Utc, TimeZone};
 use sqlx::SqlitePool;
 use crate::models::{Asset, Transaction};
 use crate::services::currency_service::CurrencyService;
+use rust_decimal::Decimal;
+use std::str::FromStr;
 use anyhow::Result;
 use std::collections::HashMap;
 
@@ -29,49 +31,62 @@ impl StatsEngine {
         sorted_weeks.sort_by(|a, b| a.0.cmp(&b.0));
 
         let mut weekly_history = Vec::new();
-        let mut prev_value: Option<f64> = None;
-        let mut twr_acc = 1.0;
+        let mut prev_value: Option<Decimal> = None;
+        let mut twr_acc = 1.0f64;
 
         for (_key, items) in sorted_weeks {
-            // Take the last trading day's value (non-zero), not the last calendar day
             let trading_items: Vec<_> = items.iter()
-                .filter(|item| item.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0) > 0.0)
+                .filter(|item| {
+                    item.get("value")
+                        .and_then(|v| v.as_str())
+                        .and_then(|s| s.parse::<Decimal>().ok())
+                        .map(|d| d > Decimal::ZERO)
+                        .unwrap_or(false)
+                })
                 .collect();
-            
+
             let last_item = if trading_items.is_empty() {
                 items.last().unwrap()
             } else {
                 trading_items.last().unwrap()
             };
-            
+
             let date = last_item.get("date").and_then(|d| d.as_str()).unwrap_or("");
-            let value = last_item.get("value").and_then(|v| v.as_f64()).unwrap_or(0.0);
+            let value_str = last_item.get("value").and_then(|v| v.as_str()).unwrap_or("0");
+            let value = Decimal::from_str(value_str).unwrap_or(Decimal::ZERO);
 
             let daily_ret = match prev_value {
-                Some(prev) if prev > 0.0 && value > 0.0 => (value - prev) / prev,
-                _ if value > 0.0 => 0.0,
+                Some(prev) if prev > Decimal::ZERO && value > Decimal::ZERO => {
+                    (value - prev) / prev
+                }
+                _ if value > Decimal::ZERO => Decimal::ZERO,
                 _ => {
-                    // Skip weeks with zero value (holidays/weekends) - carry forward TWR
                     twr_acc *= 1.0;
-                    prev_value = Some(value);
+                    // Keep prev_value as the last non-zero value: overwriting it
+                    // with a holiday's 0 would make the next real week compute a
+                    // 0.0 return instead of the actual change.
+                    if value > Decimal::ZERO {
+                        prev_value = Some(value);
+                    }
                     weekly_history.push(serde_json::json!({
                         "date": date,
-                        "value": value,
-                        "daily_return": 0.0,
-                        "twr": twr_acc - 1.0,
+                        "value": value.to_string(),
+                        "daily_return": "0.0",
+                        "twr": (twr_acc - 1.0).to_string(),
                     }));
                     continue;
                 }
             };
 
-            twr_acc *= 1.0 + daily_ret;
+            let daily_ret_f64 = daily_ret.as_f64();
+            twr_acc *= 1.0 + daily_ret_f64;
             prev_value = Some(value);
 
             weekly_history.push(serde_json::json!({
                 "date": date,
-                "value": value,
-                "daily_return": daily_ret,
-                "twr": twr_acc - 1.0,
+                "value": value.to_string(),
+                "daily_return": daily_ret.to_string(),
+                "twr": (twr_acc - 1.0).to_string(),
             }));
         }
 
@@ -90,13 +105,13 @@ impl StatsEngine {
                 "history": [],
                 "correlation_matrix": {},
                 "metrics": {
-                    "volatility": 0.0,
-                    "sharpe_ratio": 0.0,
-                    "beta": 1.0,
-                    "portfolio_value": 0.0,
-                    "unrealized_pnl": 0.0,
-                    "realized_pnl": 0.0,
-                    "beta_adjusted_exposure": 0.0
+                    "volatility": "0.0",
+                    "sharpe_ratio": "0.0",
+                    "beta": "1.0",
+                    "portfolio_value": "0.0",
+                    "unrealized_pnl": "0.0",
+                    "realized_pnl": "0.0",
+                    "beta_adjusted_exposure": "0.0"
                 }
             }));
         }
@@ -119,7 +134,7 @@ impl StatsEngine {
             .map(|a| (a.symbol.as_str(), a.isin.as_deref()))
             .collect();
 
-        let mut price_map: HashMap<(NaiveDate, String), f64> = HashMap::new();
+        let mut price_map: HashMap<(NaiveDate, String), Decimal> = HashMap::new();
         for symbol in &symbols {
             match currency_service.get_historical_prices(symbol, start_date, end_date, pool).await {
                 Ok(daily_prices) => {
@@ -133,7 +148,7 @@ impl StatsEngine {
             }
         }
 
-        let mut rate_cache: HashMap<String, f64> = HashMap::new();
+        let mut rate_cache: HashMap<String, Decimal> = HashMap::new();
         for asset in assets {
             if asset.currency != base_currency {
                 let key = format!("{}->{}", asset.currency, base_currency);
@@ -142,7 +157,7 @@ impl StatsEngine {
                     let rate = currency_service
                         .get_rate(&asset.currency, base_currency, date_utc)
                         .await
-                        .unwrap_or(1.0);
+                        .unwrap_or(Decimal::ONE);
                     rate_cache.insert(key, rate);
                 }
             }
@@ -163,7 +178,7 @@ impl StatsEngine {
             if !has_prices {
                 let isin = symbol_isin.get(symbol.as_str()).and_then(|&i| i);
                 let current_price = currency_service.get_price(symbol, isin, pool).await;
-                if current_price > 0.0 {
+                if current_price > Decimal::ZERO {
                     for date in &dates {
                         price_map.insert((*date, symbol.clone()), current_price);
                     }
@@ -175,9 +190,9 @@ impl StatsEngine {
         let mut portfolio_values = Vec::new();
         let mut daily_returns = Vec::new();
         let mut twr_cumulative = Vec::new();
-        let mut twr_acc = 1.0;
+        let mut twr_acc = 1.0f64;
 
-        let mut asset_qtys: HashMap<String, f64> = HashMap::new();
+        let mut asset_qtys: HashMap<String, Decimal> = HashMap::new();
         let mut sorted_txs = transactions.to_vec();
         sorted_txs.sort_by_key(|tx| tx.date);
 
@@ -186,24 +201,26 @@ impl StatsEngine {
             while tx_idx < sorted_txs.len() && sorted_txs[tx_idx].date.date_naive() <= date {
                 let tx = &sorted_txs[tx_idx];
                 let symbol = assets.iter().find(|a| a.id == tx.asset_id).map(|a| a.symbol.as_str()).unwrap_or("");
-                let entry = asset_qtys.entry(symbol.to_string()).or_insert(0.0);
+                let entry = asset_qtys.entry(symbol.to_string()).or_insert(Decimal::ZERO);
                 if tx.r#type.to_uppercase() == "BUY" {
-                    *entry += tx.quantity;
+                    let tx_qty = crate::db_types::str_to_decimal(&tx.quantity);
+                    *entry += tx_qty;
                 } else if tx.r#type.to_uppercase() == "SELL" {
-                    *entry = (*entry - tx.quantity).max(0.0);
+                    let tx_qty = crate::db_types::str_to_decimal(&tx.quantity);
+                    *entry = (*entry - tx_qty).max(Decimal::ZERO);
                 }
                 tx_idx += 1;
             }
 
-            let mut daily_val = 0.0;
+            let mut daily_val = Decimal::ZERO;
             for asset in assets {
-                let qty = asset_qtys.get(&asset.symbol).cloned().unwrap_or(0.0);
-                let price = price_map.get(&(date, asset.symbol.clone())).cloned().unwrap_or(0.0);
+                let qty = asset_qtys.get(&asset.symbol).cloned().unwrap_or(Decimal::ZERO);
+                let price = price_map.get(&(date, asset.symbol.clone())).cloned().unwrap_or(Decimal::ZERO);
 
                 let mut final_price = price;
                 if asset.currency != base_currency {
                     let key = format!("{}->{}", asset.currency, base_currency);
-                    let rate = rate_cache.get(&key).copied().unwrap_or(1.0);
+                    let rate = rate_cache.get(&key).copied().unwrap_or(Decimal::ONE);
                     final_price *= rate;
                 }
                 daily_val += qty * final_price;
@@ -213,24 +230,25 @@ impl StatsEngine {
 
             let daily_ret = if portfolio_values.len() > 1 {
                 let prev_val = portfolio_values[portfolio_values.len()-2];
-                if prev_val > 0.0 { (daily_val - prev_val) / prev_val } else { 0.0 }
+                if prev_val > Decimal::ZERO { (daily_val - prev_val) / prev_val } else { Decimal::ZERO }
             } else {
-                0.0
+                Decimal::ZERO
             };
 
-            twr_acc *= 1.0 + daily_ret;
+            let daily_ret_f64 = daily_ret.as_f64();
+            twr_acc *= 1.0 + daily_ret_f64;
             daily_returns.push(daily_ret);
-            twr_cumulative.push(twr_acc - 1.0);
+            twr_cumulative.push(Decimal::from_str(&(twr_acc - 1.0).to_string()).unwrap_or(Decimal::ZERO));
 
             history.push(serde_json::json!({
                 "date": date.to_string(),
-                "value": daily_val,
-                "daily_return": daily_ret,
-                "twr": twr_acc - 1.0
+                "value": daily_val.to_string(),
+                "daily_return": daily_ret.to_string(),
+                "twr": (twr_acc - 1.0).to_string()
             }));
         }
 
-        let final_val = portfolio_values.last().cloned().unwrap_or(0.0);
+        let final_val = portfolio_values.last().cloned().unwrap_or(Decimal::ZERO);
 
         let weekly_history = Self::aggregate_weekly(history).await;
 
@@ -238,13 +256,13 @@ impl StatsEngine {
             "history": weekly_history,
             "correlation_matrix": {},
             "metrics": {
-                "volatility": 0.0,
-                "sharpe_ratio": 0.0,
-                "beta": 1.0,
-                "portfolio_value": final_val,
-                "beta_adjusted_exposure": final_val,
-                "unrealized_pnl": 0.0,
-                "realized_pnl": 0.0,
+                "volatility": "0.0",
+                "sharpe_ratio": "0.0",
+                "beta": "1.0",
+                "portfolio_value": final_val.to_string(),
+                "beta_adjusted_exposure": final_val.to_string(),
+                "unrealized_pnl": "0.0",
+                "realized_pnl": "0.0",
             }
         }))
     }
@@ -274,9 +292,9 @@ mod tests {
             id: 1,
             asset_id: 1,
             r#type: "BUY".to_string(),
-            quantity: 100.0,
-            price: 50.0,
-            fee: 0.0,
+            quantity: "100.0".to_string(),
+            price: "50.0".to_string(),
+            fee: "0.0".to_string(),
             date: DateTime::parse_from_rfc3339("2024-01-01T00:00:00Z").unwrap().with_timezone(&Utc),
         }
     }
@@ -293,28 +311,28 @@ mod tests {
         ).await.unwrap();
 
         let metrics = result.get("metrics").unwrap();
-        let vol = metrics.get("volatility").unwrap().as_f64().unwrap();
-        let sharpe = metrics.get("sharpe_ratio").unwrap().as_f64().unwrap();
-        let beta = metrics.get("beta").unwrap().as_f64().unwrap();
-        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
-        
-        assert!((vol - 0.0).abs() < f64::EPSILON);
-        assert!((sharpe - 0.0).abs() < f64::EPSILON);
-        assert!((beta - 1.0).abs() < f64::EPSILON);
-        assert!((value - 0.0).abs() < f64::EPSILON);
+        let vol = metrics.get("volatility").unwrap().as_str().unwrap();
+        let sharpe = metrics.get("sharpe_ratio").unwrap().as_str().unwrap();
+        let beta = metrics.get("beta").unwrap().as_str().unwrap();
+        let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
+
+        assert_eq!(vol, "0.0");
+        assert_eq!(sharpe, "0.0");
+        assert_eq!(beta, "1.0");
+        assert_eq!(value, "0.0");
     }
 
     #[tokio::test]
     async fn test_with_data_but_no_prices_returns_zero_value() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
-        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (id INTEGER PRIMARY KEY, symbol TEXT, date TEXT, close_price REAL)")
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
             .execute(&pool)
             .await
             .unwrap();
         let svc = CurrencyService::new();
         let assets = vec![empty_asset()];
         let txs = vec![empty_tx()];
-        
+
         let result = StatsEngine::calculate_portfolio_performance(
             &pool,
             &assets,
@@ -324,19 +342,19 @@ mod tests {
         ).await.unwrap();
 
         let metrics = result.get("metrics").unwrap();
-        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
-        assert!(value >= 0.0);
+        let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
+        assert_eq!(value, "0");
     }
 
     #[tokio::test]
     async fn test_multicurrency_asset_with_conversion() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
-        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
             .execute(&pool)
             .await
             .unwrap();
         let svc = CurrencyService::new();
-        
+
         let asset = Asset {
             id: 1,
             portfolio_id: 1,
@@ -351,12 +369,12 @@ mod tests {
             id: 1,
             asset_id: 1,
             r#type: "BUY".to_string(),
-            quantity: 10.0,
-            price: 100.0,
-            fee: 0.0,
+            quantity: "10.0".to_string(),
+            price: "100.0".to_string(),
+            fee: "0.0".to_string(),
             date: DateTime::parse_from_rfc3339("2024-06-01T00:00:00Z").unwrap().with_timezone(&Utc),
         };
-        
+
         let result = StatsEngine::calculate_portfolio_performance(
             &pool,
             &[asset],
@@ -366,21 +384,21 @@ mod tests {
         ).await.unwrap();
 
         let metrics = result.get("metrics").unwrap();
-        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
-        assert!((value - 0.0).abs() < f64::EPSILON);
+        let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
+        assert_eq!(value, "0");
     }
 
     #[tokio::test]
     async fn test_single_day_range_does_not_panic() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
-        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
             .execute(&pool)
             .await
             .unwrap();
         let svc = CurrencyService::new();
         let assets = vec![empty_asset()];
         let txs = vec![empty_tx()];
-        
+
         let result = StatsEngine::calculate_portfolio_performance(
             &pool,
             &assets,
@@ -396,23 +414,76 @@ mod tests {
     #[tokio::test]
     async fn test_aggregate_weekly_basic() {
         let daily_history = vec![
-            serde_json::json!({"date": "2024-01-01", "value": 100.0, "daily_return": 0.0, "twr": 0.0}),
-            serde_json::json!({"date": "2024-01-02", "value": 105.0, "daily_return": 0.05, "twr": 0.05}),
-            serde_json::json!({"date": "2024-01-03", "value": 103.0, "daily_return": -0.019, "twr": 0.029}),
-            serde_json::json!({"date": "2024-01-08", "value": 110.0, "daily_return": 0.068, "twr": 0.099}),
-            serde_json::json!({"date": "2024-01-09", "value": 112.0, "daily_return": 0.018, "twr": 0.119}),
+            serde_json::json!({"date": "2024-01-01", "value": "100.0", "daily_return": "0.0", "twr": "0.0"}),
+            serde_json::json!({"date": "2024-01-02", "value": "105.0", "daily_return": "0.05", "twr": "0.05"}),
+            serde_json::json!({"date": "2024-01-03", "value": "103.0", "daily_return": "-0.019", "twr": "0.029"}),
+            serde_json::json!({"date": "2024-01-08", "value": "110.0", "daily_return": "0.068", "twr": "0.099"}),
+            serde_json::json!({"date": "2024-01-09", "value": "112.0", "daily_return": "0.018", "twr": "0.119"}),
         ];
 
         let weekly = StatsEngine::aggregate_weekly(daily_history).await;
         assert_eq!(weekly.len(), 2);
 
         let week1 = &weekly[0];
-        assert_eq!(week1.get("value").unwrap().as_f64().unwrap(), 103.0);
+        assert_eq!(week1.get("value").unwrap().as_str().unwrap(), "103.0");
         assert_eq!(week1.get("date").unwrap().as_str().unwrap(), "2024-01-03");
 
         let week2 = &weekly[1];
-        assert_eq!(week2.get("value").unwrap().as_f64().unwrap(), 112.0);
+        assert_eq!(week2.get("value").unwrap().as_str().unwrap(), "112.0");
         assert_eq!(week2.get("date").unwrap().as_str().unwrap(), "2024-01-09");
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_weekly_carries_twr_across_zero_value_week() {
+        // aggregate_weekly computes each week's return against the *previous*
+        // week's value, so the very first week always yields twr 0. The test
+        // therefore uses a leading baseline week so the following week builds a
+        // real return (0.10), then a holiday (zero-value) week that must carry
+        // that twr forward (not reset to 0.0).
+        let daily_history = vec![
+            // week A (2023): baseline, establishes prev_value = 100
+            serde_json::json!({"date":"2023-12-25","value":"100.0","daily_return":"0.0","twr":"0.0"}),
+            // week1 (2024): gains to 110 -> twr 0.10
+            serde_json::json!({"date":"2024-01-02","value":"110.0","daily_return":"0.10","twr":"0.10"}),
+            // week2: holiday (value 0) -> must carry twr 0.10, not 0.0
+            serde_json::json!({"date":"2024-01-08","value":"0","daily_return":"0.0","twr":"0.0"}),
+            serde_json::json!({"date":"2024-01-15","value":"110.0","daily_return":"0.0","twr":"0.10"}),
+        ];
+        let weekly = StatsEngine::aggregate_weekly(daily_history).await;
+        // week A = index 0, week1 = index 1, holiday = index 2
+        // holiday must carry forward the accumulated twr (same string as the
+        // prior gain week) rather than resetting to a zero value.
+        let holiday_twr = weekly[2].get("twr").unwrap().as_str().unwrap();
+        let gain_twr = weekly[1].get("twr").unwrap().as_str().unwrap();
+        assert_eq!(holiday_twr, gain_twr);
+        assert_ne!(holiday_twr, "0.0");
+        assert_ne!(holiday_twr, "0");
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_weekly_recovery_week_returns_real_change() {
+        // A zero-value (holiday) week must not poison prev_value: the week after
+        // a holiday should report its real return against the last non-zero
+        // value, not 0.0.
+        let daily_history = vec![
+            // baseline week, establishes prev_value = 100
+            serde_json::json!({"date":"2023-12-25","value":"100.0","daily_return":"0.0","twr":"0.0"}),
+            // week1: gains to 110 -> +10%
+            serde_json::json!({"date":"2024-01-02","value":"110.0","daily_return":"0.10","twr":"0.10"}),
+            // week2: holiday (value 0)
+            serde_json::json!({"date":"2024-01-08","value":"0","daily_return":"0.0","twr":"0.10"}),
+            // week3: 110 -> 121 should be +10%, not 0.0
+            serde_json::json!({"date":"2024-01-15","value":"121.0","daily_return":"0.10","twr":"0.21"}),
+        ];
+        let weekly = StatsEngine::aggregate_weekly(daily_history).await;
+        let recovery = &weekly[3];
+        assert_eq!(
+            recovery.get("daily_return").unwrap().as_str().unwrap(),
+            "0.10",
+            "week after holiday must report its real +10% return"
+        );
+        let twr: f64 = recovery.get("twr").unwrap().as_str().unwrap().parse().unwrap();
+        assert!(twr > 0.20, "twr must compound past the 0.10 carry, got {twr}");
     }
 
     #[tokio::test]
@@ -424,7 +495,7 @@ mod tests {
     #[tokio::test]
     async fn test_fallback_to_current_price_when_no_historical_data() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
-        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
             .execute(&pool)
             .await
             .unwrap();
@@ -444,9 +515,9 @@ mod tests {
             id: 1,
             asset_id: 1,
             r#type: "BUY".to_string(),
-            quantity: 10.0,
-            price: 50.0,
-            fee: 0.0,
+            quantity: "10.0".to_string(),
+            price: "50.0".to_string(),
+            fee: "0.0".to_string(),
             date: DateTime::parse_from_rfc3339("2024-06-01T00:00:00Z").unwrap().with_timezone(&Utc),
         };
 
@@ -459,7 +530,7 @@ mod tests {
         ).await.unwrap();
 
         let metrics = result.get("metrics").unwrap();
-        let value = metrics.get("portfolio_value").unwrap().as_f64().unwrap();
-        assert!(value >= 0.0);
+        let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
+        assert_eq!(value, "0");
     }
 }

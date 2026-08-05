@@ -1,5 +1,6 @@
 #[macro_use] extern crate rocket;
 
+pub mod db_types;
 pub mod models;
 pub mod schemas;
 pub mod services;
@@ -15,6 +16,7 @@ pub mod api_routes {
 use rocket::{Rocket, Build};
 use rocket::serde::json::Json;
 use sqlx::SqlitePool;
+use sqlx::sqlite::SqliteConnection;
 use crate::services::currency_service::CurrencyService;
 use crate::openapi::ApiDoc;
 use utoipa::OpenApi;
@@ -99,9 +101,9 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         asset_id INTEGER NOT NULL,
         type TEXT NOT NULL,
-        quantity REAL NOT NULL,
-        price REAL NOT NULL,
-        fee REAL NOT NULL,
+        quantity TEXT NOT NULL,
+        price TEXT NOT NULL,
+        fee TEXT NOT NULL,
         date TEXT NOT NULL,
         FOREIGN KEY (asset_id) REFERENCES assets(id)
     )").execute(pool).await?;
@@ -109,14 +111,132 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
     sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (
         symbol TEXT NOT NULL,
         date DATE NOT NULL,
-        close_price REAL NOT NULL
+        close_price TEXT NOT NULL
     )").execute(pool).await?;
 
     sqlx::query("CREATE INDEX IF NOT EXISTS idx_historical_prices_symbol_date ON historical_prices(symbol, date)")
         .execute(pool)
         .await?;
 
+    migrate_decimal_columns(pool).await?;
+
     Ok(())
+}
+
+async fn column_type(
+    conn: &mut SqliteConnection,
+    table: &str,
+    column: &str,
+) -> Result<Option<String>, sqlx::Error> {
+    let rows: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as(&format!("PRAGMA table_info({table})")).fetch_all(&mut *conn).await?;
+    Ok(rows.iter().find(|r| r.1 == column).map(|r| r.2.clone()))
+}
+
+async fn column_exists(
+    conn: &mut SqliteConnection,
+    table: &str,
+    column: &str,
+) -> Result<bool, sqlx::Error> {
+    Ok(column_type(conn, table, column).await?.is_some())
+}
+
+async fn migrate_one_column(
+    conn: &mut SqliteConnection,
+    table: &str,
+    column: &str,
+) -> Result<(), sqlx::Error> {
+    let old = format!("{column}_old");
+    let current = column_type(conn, table, column).await?;
+    let old_exists = column_exists(conn, table, &old).await?;
+
+    match (current.as_deref(), old_exists) {
+        (Some("TEXT"), true) => {
+            // add happened, drop-leftover crash happened after ADD: re-copy from
+            // `_old` (idempotent; harmless if the UPDATE already ran, and it
+            // recovers the real values if the crash landed before the UPDATE),
+            // then finish the drop.
+            sqlx::query(&format!("UPDATE {table} SET {column} = CAST({old} AS TEXT)"))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {old}"))
+                .execute(&mut *conn).await?;
+            Ok(())
+        }
+        (Some("TEXT"), false) => Ok(()),
+        (None, true) => {
+            // RENAME happened, ADD never did: recreate and repopulate from _old.
+            sqlx::query(&format!(
+                "ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT '0'"
+            ))
+            .execute(&mut *conn)
+            .await?;
+            sqlx::query(&format!("UPDATE {table} SET {column} = CAST({old} AS TEXT)"))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {old}"))
+                .execute(&mut *conn).await?;
+            Ok(())
+        }
+        (None, false) => Ok(()),
+        (Some(_), true) => {
+            // non-TEXT column plus a stray _old leftover: drop the leftover, then migrate.
+            sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {old}"))
+                .execute(&mut *conn).await?;
+            sqlx::query(&format!("ALTER TABLE {table} RENAME COLUMN {column} TO {old}"))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(&format!(
+                "ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT '0'"
+            ))
+            .execute(&mut *conn)
+            .await?;
+            sqlx::query(&format!("UPDATE {table} SET {column} = CAST({old} AS TEXT)"))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {old}"))
+                .execute(&mut *conn).await?;
+            Ok(())
+        }
+        (Some(_), false) => {
+            // standard migration of a non-TEXT column.
+            sqlx::query(&format!("ALTER TABLE {table} RENAME COLUMN {column} TO {old}"))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(&format!(
+                "ALTER TABLE {table} ADD COLUMN {column} TEXT NOT NULL DEFAULT '0'"
+            ))
+            .execute(&mut *conn)
+            .await?;
+            sqlx::query(&format!("UPDATE {table} SET {column} = CAST({old} AS TEXT)"))
+                .execute(&mut *conn)
+                .await?;
+            sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {old}"))
+                .execute(&mut *conn).await?;
+            Ok(())
+        }
+    }
+}
+
+pub async fn migrate_decimal_columns(pool: &SqlitePool) -> Result<(), sqlx::Error> {
+    // Run all ALTER statements on a single dedicated connection with
+    // `legacy_alter_table` enabled. Bundled SQLite 3.46 has a stale per-connection
+    // schema bug that makes `DROP COLUMN` followed by `RENAME COLUMN` + `ADD COLUMN`
+    // fail on file-backed databases (the brief's original pool-based approach only
+    // works on `:memory:` connections); legacy mode avoids the buggy code path.
+    // The setting is reset before the connection is returned to the pool so it
+    // cannot leak modern `ALTER` semantics into unrelated pooled connections.
+    let mut conn = pool.acquire().await?;
+    sqlx::query("PRAGMA legacy_alter_table = ON").execute(&mut *conn).await?;
+    let result = (async {
+        for column in ["quantity", "price", "fee"] {
+            migrate_one_column(&mut conn, "transactions", column).await?;
+        }
+        migrate_one_column(&mut conn, "historical_prices", "close_price").await
+    })
+    .await;
+    sqlx::query("PRAGMA legacy_alter_table = OFF").execute(&mut *conn).await?;
+    result
 }
 
 pub fn build_rocket(pool: SqlitePool, currency_service: CurrencyService, cors: Cors) -> Rocket<Build> {

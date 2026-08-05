@@ -5,12 +5,19 @@ import {
   Portfolio, 
   TaxSummary, 
   Asset, 
-  Transaction, 
   TransactionType, 
   AssetType
 } from '../types';
 import { isValidIsin } from '../utils/isinValidator';
 import CsvImportModal from './CsvImportModal';
+
+export interface CreateTxPayload {
+  type: TransactionType;
+  quantity: string;
+  price: string;
+  fee: string;
+  date: string;
+}
 
 function detectCurrencyFromSymbol(symbol: string): string {
   const s = symbol.toUpperCase();
@@ -43,7 +50,7 @@ interface PortfolioDetailProps {
   onDeleteAsset: (assetId: number) => Promise<void>;
   onDeletePortfolio: () => Promise<void>;
   onFetchPortfolioData: () => Promise<void>;
-  onAddTransaction: (assetId: number, txData: Partial<Transaction>) => Promise<void>;
+  onAddTransaction: (assetId: number, txData: CreateTxPayload) => Promise<void>;
   strategy: string;
   setStrategy: (strategy: string) => void;
   thresholdDays: number;
@@ -115,13 +122,14 @@ export default function PortfolioDetail({
   const handleTxSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!txForm.asset_id || !txForm.quantity || !txForm.price) return;
-    await onAddTransaction(Number(txForm.asset_id), {
+    const payload: CreateTxPayload = {
       type: txForm.type,
-      quantity: parseFloat(txForm.quantity),
-      price: parseFloat(txForm.price),
-      fee: parseFloat(txForm.fee),
+      quantity: txForm.quantity,
+      price: txForm.price,
+      fee: txForm.fee,
       date: new Date(txForm.date).toISOString()
-    });
+    };
+    await onAddTransaction(Number(txForm.asset_id), payload);
     setTxForm({ asset_id: '', type: 'BUY', quantity: '', price: '', fee: '0.0', date: new Date().toISOString().slice(0, 16) });
     setShowTxModal(false);
   };

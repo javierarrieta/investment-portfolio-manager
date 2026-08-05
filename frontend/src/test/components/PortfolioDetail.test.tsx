@@ -317,8 +317,8 @@ describe('PortfolioDetail', () => {
 
     expect(onAddTransaction).toHaveBeenCalledWith(1, expect.objectContaining({
       type: 'BUY',
-      quantity: 10,
-      price: 180,
+      quantity: '10',
+      price: '180',
     }))
   })
 

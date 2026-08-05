@@ -195,9 +195,9 @@ pub async fn create_transaction(
     )
     .bind(asset_id)
     .bind(tx.r#type.to_uppercase())
-    .bind(tx.quantity)
-    .bind(tx.price)
-    .bind(tx.fee)
+    .bind(tx.quantity.to_string())
+    .bind(tx.price.to_string())
+    .bind(tx.fee.to_string())
     .bind(tx.date)
     .fetch_one(pool.inner())
     .await
@@ -207,9 +207,9 @@ pub async fn create_transaction(
         id: res.id,
         asset_id: res.asset_id,
         r#type: res.r#type,
-        quantity: res.quantity,
-        price: res.price,
-        fee: res.fee,
+        quantity: crate::db_types::str_to_decimal(&res.quantity),
+        price: crate::db_types::str_to_decimal(&res.price),
+        fee: crate::db_types::str_to_decimal(&res.fee),
         date: res.date,
     }))
 }
@@ -252,9 +252,9 @@ pub async fn list_portfolio_transactions(portfolio_id: i32, pool: &State<SqliteP
         id: t.id,
         asset_id: t.asset_id,
         r#type: t.r#type,
-        quantity: t.quantity,
-        price: t.price,
-        fee: t.fee,
+        quantity: crate::db_types::str_to_decimal(&t.quantity),
+        price: crate::db_types::str_to_decimal(&t.price),
+        fee: crate::db_types::str_to_decimal(&t.fee),
         date: t.date,
     }).collect();
 

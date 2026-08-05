@@ -1,6 +1,7 @@
 import React from 'react';
 import { ShieldAlert, Info, TrendingUp, Flame } from 'lucide-react';
 import { PortfolioPerformance } from '../types';
+import { toNumber, DecimalLike } from '../utils/decimal';
 
 export default function AnalyticsView({ performance, currency = 'USD' }: { performance: PortfolioPerformance | null; currency?: string }) {
   if (!performance || !performance.metrics || performance.history.length === 0) {
@@ -16,6 +17,10 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
   }
 
   const { metrics, correlation_matrix } = performance;
+  const volatility = toNumber(metrics.volatility);
+  const sharpeRatio = toNumber(metrics.sharpe_ratio);
+  const beta = toNumber(metrics.beta) || 1;
+  const betaAdjustedExposure = toNumber(metrics.beta_adjusted_exposure);
 
   const formatPercent = (val: number) => {
     return `${(val * 100).toFixed(2)}%`;
@@ -27,8 +32,9 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
   };
 
   // Get color for correlation cells
-  const getCellColor = (val: number | undefined | null) => {
-    if (val === undefined || val === null) return 'rgba(255,255,255,0.05)';
+  const getCellColor = (raw: DecimalLike) => {
+    if (raw === undefined || raw === null) return 'rgba(255,255,255,0.05)';
+    const val = toNumber(raw);
     // Scale color from red (-1) to dark slate (0) to blue/purple (+1)
     if (val > 0) {
       return `rgba(99, 102, 241, ${val})`; // Indigo tint based on correlation
@@ -48,9 +54,9 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             Annualized Volatility <span title="Measure of standard deviation of portfolio daily returns multiplied by sqrt(252). Indicates general portfolio price variability."><Info size={14} /></span>
           </div>
-          <div className="metric-value">{formatPercent(metrics.volatility || 0.0)}</div>
-          <div className="metric-change" style={{ color: (metrics.volatility || 0.0) < 0.25 ? 'var(--color-success)' : 'var(--color-warning)' }}>
-            {(metrics.volatility || 0) < 0.25 ? 'Moderate Risk' : 'High Risk Profile'}
+          <div className="metric-value">{formatPercent(volatility)}</div>
+          <div className="metric-change" style={{ color: volatility < 0.25 ? 'var(--color-success)' : 'var(--color-warning)' }}>
+            {volatility < 0.25 ? 'Moderate Risk' : 'High Risk Profile'}
           </div>
         </div>
 
@@ -58,9 +64,9 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             Sharpe Ratio <span title="Excess return per unit of volatility. Risk-free rate assumed at 2%. Values > 1.0 are considered good, > 2.0 very good."><Info size={14} /></span>
           </div>
-          <div className="metric-value">{(metrics.sharpe_ratio || 0.0).toFixed(2)}</div>
-          <div className="metric-change" style={{ color: (metrics.sharpe_ratio || 0) >= 1.0 ? 'var(--color-success)' : 'var(--text-muted)' }}>
-            {(metrics.sharpe_ratio || 0) >= 1.0 ? 'Strong Risk-Adjusted Returns' : 'Sub-optimal Return/Risk'}
+          <div className="metric-value">{sharpeRatio.toFixed(2)}</div>
+          <div className="metric-change" style={{ color: sharpeRatio >= 1.0 ? 'var(--color-success)' : 'var(--text-muted)' }}>
+            {sharpeRatio >= 1.0 ? 'Strong Risk-Adjusted Returns' : 'Sub-optimal Return/Risk'}
           </div>
         </div>
 
@@ -68,9 +74,9 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             Portfolio Beta <span title="Sensitivity of the portfolio to market movements (SPY benchmark). Beta > 1 is more volatile than market; Beta < 1 is less volatile."><Info size={14} /></span>
           </div>
-          <div className="metric-value">{(metrics.beta || 1.0).toFixed(2)}</div>
-          <div className="metric-change" style={{ color: Math.abs((metrics.beta || 1) - 1.0) < 0.2 ? 'var(--text-primary)' : 'var(--color-secondary)' }}>
-            {(metrics.beta || 1) > 1.1 ? 'Market Amplifier' : (metrics.beta || 1) < 0.9 ? 'Defensive Structure' : 'Market Tracker'}
+          <div className="metric-value">{beta.toFixed(2)}</div>
+          <div className="metric-change" style={{ color: Math.abs(beta - 1.0) < 0.2 ? 'var(--text-primary)' : 'var(--color-secondary)' }}>
+            {beta > 1.1 ? 'Market Amplifier' : beta < 0.9 ? 'Defensive Structure' : 'Market Tracker'}
           </div>
         </div>
 
@@ -78,7 +84,7 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
           <div className="metric-label" style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
             Beta-Adjusted Net Exposure <span title="Equivalent exposure of the portfolio compared to SPY. Formula: Portfolio Value * Portfolio Beta."><Info size={14} /></span>
           </div>
-          <div className="metric-value">{formatCurrency(metrics.beta_adjusted_exposure || 0.0)}</div>
+          <div className="metric-value">{formatCurrency(betaAdjustedExposure)}</div>
           <div className="metric-change positive">
             Benchmark Equivalent Risk
           </div>
@@ -113,7 +119,8 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
                     <tr key={s1}>
                       <td style={{ padding: '12px 8px', fontWeight: 600, fontSize: '0.875rem', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>{s1}</td>
                       {symbols.map(s2 => {
-                        const val = correlation_matrix[s1][s2];
+                        const raw = correlation_matrix[s1][s2] as DecimalLike;
+                        const val = toNumber(raw);
                         return (
                           <td 
                             key={s2} 
@@ -121,7 +128,7 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
                               padding: '12px 8px',
                               textAlign: 'center',
                               borderBottom: '1px solid rgba(255,255,255,0.03)',
-                              backgroundColor: getCellColor(val),
+                              backgroundColor: getCellColor(raw),
                               transition: 'background-color 0.2s'
                             }}
                           >
@@ -133,7 +140,7 @@ export default function AnalyticsView({ performance, currency = 'USD' }: { perfo
                                 textShadow: '0 1px 2px rgba(0,0,0,0.5)'
                               }}
                             >
-                              {val !== undefined ? val.toFixed(2) : '-'}
+                              {raw !== undefined ? val.toFixed(2) : '-'}
                             </span>
                           </td>
                         );

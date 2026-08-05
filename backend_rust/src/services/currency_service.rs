@@ -8,9 +8,15 @@ use serde::Deserialize;
 use anyhow::{Result, anyhow};
 use crate::models::HistoricalPrice;
 use sqlx::sqlite::SqlitePool;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 
 const RATE_LIMIT_DELAY: Duration = Duration::from_millis(200);
 const MAX_RETRIES: usize = 3;
+
+fn f64_to_decimal(v: f64) -> Decimal {
+    Decimal::from_f64(v).unwrap_or(Decimal::ZERO)
+}
 
 #[derive(Deserialize)]
 struct YahooChartResponse {
@@ -47,8 +53,8 @@ struct EodhdSearchResult {
 
 pub struct CurrencyService {
     client: Client,
-    timeout: std::time::Duration,
-    cache: Arc<RwLock<HashMap<(String, String, NaiveDate), f64>>>,
+    timeout: Duration,
+    cache: Arc<RwLock<HashMap<(String, String, NaiveDate), Decimal>>>,
     last_request: Mutex<Option<Instant>>,
     eodhd_api_key: Option<String>,
 }
@@ -57,14 +63,26 @@ impl CurrencyService {
     pub fn new() -> Self {
         Self {
             client: Client::builder()
-                .timeout(std::time::Duration::from_secs(10))
+                .timeout(Duration::from_secs(10))
                 .user_agent("investment-portfolio-manager/1.0")
                 .build()
                 .unwrap_or_else(|_| Client::new()),
-            timeout: std::time::Duration::from_secs(10),
+            timeout: Duration::from_secs(10),
             cache: Arc::new(RwLock::new(HashMap::new())),
             last_request: Mutex::new(None),
             eodhd_api_key: std::env::var("EODHD_API_KEY").ok(),
+        }
+    }
+
+    fn redact_url(url: &str) -> String {
+        // EODHD embeds the API key as a query parameter; never surface it in
+        // logs or errors. Yahoo URLs have no query string, so they pass through.
+        match url.split_once("api_token=") {
+            Some((prefix, rest)) => {
+                let end = rest.find('&').unwrap_or(rest.len());
+                format!("{prefix}api_token=***{}", &rest[end..])
+            }
+            None => url.to_string(),
         }
     }
 
@@ -108,7 +126,7 @@ impl CurrencyService {
                     if attempt < MAX_RETRIES - 1 {
                         eprintln!(
                             "WARN: Request to {} failed (attempt {}/{}): {}, retrying in {:?}",
-                            url,
+                            Self::redact_url(url),
                             attempt + 1,
                             MAX_RETRIES,
                             e,
@@ -120,7 +138,7 @@ impl CurrencyService {
                     }
                     return Err(anyhow!(
                         "Request to {} failed after {} retries: {}",
-                        url,
+                        Self::redact_url(url),
                         MAX_RETRIES,
                         e
                     ));
@@ -128,22 +146,22 @@ impl CurrencyService {
             }
         }
 
-        Err(anyhow!("Max retries exceeded for {}", url))
+        Err(anyhow!("Max retries exceeded for {}", Self::redact_url(url)))
     }
 
-    pub async fn get_rate(&self, from_curr: &str, to_curr: &str, date: DateTime<Utc>) -> Result<f64> {
+    pub async fn get_rate(&self, from_curr: &str, to_curr: &str, date: DateTime<Utc>) -> Result<Decimal> {
         let date_naive = date.date_naive();
         let cache_key = (from_curr.to_string(), to_curr.to_string(), date_naive);
 
         {
             let cache = self.cache.read().await;
-            if let Some(&rate) = cache.get(&cache_key) {
-                return Ok(rate);
+            if let Some(rate) = cache.get(&cache_key) {
+                return Ok(*rate);
             }
         }
 
         if from_curr == to_curr {
-            return Ok(1.0);
+            return Ok(Decimal::ONE);
         }
 
         let symbol = format!("{}={}", from_curr, to_curr);
@@ -160,18 +178,16 @@ impl CurrencyService {
         }
 
         let yahoo_resp: YahooChartResponse = response.json().await?;
-        
+
         let result = yahoo_resp.chart.result.first()
             .ok_or_else(|| anyhow!("No result found for symbol {}", symbol))?;
-        
+
         let close_prices = &result.indicators.quote.first()
             .ok_or_else(|| anyhow!("No quote data found for symbol {}", symbol))?
             .close;
-        
-        // For simplicity, we take the last available close price if we can't find the exact date.
-        // In a more robust implementation, we'd match the timestamp.
+
         let rate = close_prices.iter().rev()
-            .find_map(|x| *x)
+            .find_map(|x| x.map(f64_to_decimal))
             .ok_or_else(|| anyhow!("No close price found for symbol {}", symbol))?;
 
         let mut cache = self.cache.write().await;
@@ -180,12 +196,7 @@ impl CurrencyService {
         Ok(rate)
     }
 
-    /// Fetches the latest close price for a ticker symbol.
-    /// Tries Yahoo Finance first, then falls back to EODHD if an ISIN is provided.
-    /// Caches the result in the historical_prices table for future lookups.
-    /// Returns 0.0 if the price cannot be fetched (logged warning).
-    pub async fn get_price(&self, symbol: &str, isin: Option<&str>, pool: &SqlitePool) -> f64 {
-        // 1. Check if we have a cached price for today
+    pub async fn get_price(&self, symbol: &str, isin: Option<&str>, pool: &SqlitePool) -> Decimal {
         let today = chrono::Utc::now().date_naive();
         let existing = sqlx::query_as::<_, HistoricalPrice>(
             "SELECT * FROM historical_prices WHERE symbol = ? AND date = ?"
@@ -196,22 +207,20 @@ impl CurrencyService {
         .await;
 
         if let Ok(Some(hp)) = existing {
-            return hp.close_price;
+            return crate::db_types::str_to_decimal(&hp.close_price);
         }
 
-        // 2. Try Yahoo Finance
         let price = self.fetch_yahoo_price(symbol).await;
-        if price > 0.0 {
+        if price > Decimal::ZERO {
             self.cache_price(symbol, today, price, pool).await;
             return price;
         }
 
-        // 3. Fallback to EODHD if ISIN is available
         if let Some(isin) = isin {
             if !isin.is_empty() {
                 if let Some(eodhd_key) = &self.eodhd_api_key {
                     let price = self.fetch_eodhd_price(isin, eodhd_key).await;
-                    if price > 0.0 {
+                    if price > Decimal::ZERO {
                         self.cache_price(symbol, today, price, pool).await;
                         return price;
                     }
@@ -219,16 +228,16 @@ impl CurrencyService {
             }
         }
 
-        0.0
+        Decimal::ZERO
     }
 
-    async fn fetch_yahoo_price(&self, symbol: &str) -> f64 {
+    async fn fetch_yahoo_price(&self, symbol: &str) -> Decimal {
         let url = format!("https://query1.finance.yahoo.com/v8/finance/chart/{}", symbol);
         let response = match self.fetch_with_retry(&url).await {
             Ok(resp) => resp,
             Err(e) => {
                 eprintln!("WARN: Failed to fetch Yahoo price for {}: {}", symbol, e);
-                return 0.0;
+                return Decimal::ZERO;
             }
         };
 
@@ -240,14 +249,14 @@ impl CurrencyService {
                 status, symbol,
                 &body_preview[..body_preview.len().min(500)]
             );
-            return 0.0;
+            return Decimal::ZERO;
         }
 
         let body_bytes = match response.bytes().await {
             Ok(b) => b,
             Err(e) => {
                 eprintln!("WARN: Failed to read Yahoo response for {}: {}", symbol, e);
-                return 0.0;
+                return Decimal::ZERO;
             }
         };
 
@@ -260,7 +269,7 @@ impl CurrencyService {
                     symbol, e,
                     &body_preview[..body_preview.len().min(500)]
                 );
-                return 0.0;
+                return Decimal::ZERO;
             }
         };
 
@@ -270,19 +279,19 @@ impl CurrencyService {
                 Some(q) => q.close.clone(),
                 None => {
                     eprintln!("WARN: No quote data for symbol: {}", symbol);
-                    return 0.0;
+                    return Decimal::ZERO;
                 }
             },
             None => {
                 eprintln!("WARN: No price data for symbol: {}", symbol);
-                return 0.0;
+                return Decimal::ZERO;
             }
         };
 
-        close_prices.iter().rev().find_map(|x| *x).unwrap_or(0.0)
+        close_prices.iter().rev().find_map(|x| x.map(f64_to_decimal)).unwrap_or(Decimal::ZERO)
     }
 
-    async fn fetch_eodhd_price(&self, isin: &str, api_key: &str) -> f64 {
+    async fn fetch_eodhd_price(&self, isin: &str, api_key: &str) -> Decimal {
         let url = format!(
             "https://eodhd.com/api/search/{}?api_token={}&fmt=json",
             isin, api_key
@@ -292,49 +301,47 @@ impl CurrencyService {
             Ok(resp) => resp,
             Err(e) => {
                 eprintln!("WARN: EODHD search failed for {}: {}", isin, e);
-                return 0.0;
+                return Decimal::ZERO;
             }
         };
 
         let status = response.status();
         if !status.is_success() {
             eprintln!("WARN: EODHD returned status {} for {}", status, isin);
-            return 0.0;
+            return Decimal::ZERO;
         }
 
         let results: Vec<EodhdSearchResult> = match response.json().await {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("WARN: Failed to parse EODHD response for {}: {}", isin, e);
-                return 0.0;
+                return Decimal::ZERO;
             }
         };
 
-        results.first().and_then(|r| r.previous_close).unwrap_or(0.0)
+        results.first()
+            .and_then(|r| r.previous_close.map(f64_to_decimal))
+            .unwrap_or(Decimal::ZERO)
     }
 
-    async fn cache_price(&self, symbol: &str, date: NaiveDate, price: f64, pool: &SqlitePool) {
+    async fn cache_price(&self, symbol: &str, date: NaiveDate, price: Decimal, pool: &SqlitePool) {
         let _ = sqlx::query(
             "INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)"
         )
         .bind(symbol)
         .bind(date)
-        .bind(price)
+        .bind(crate::db_types::decimal_to_str(&price))
         .execute(pool)
         .await;
     }
 
-    /// Fetches historical daily close prices for a symbol from Yahoo Finance.
-    /// Calls the /chart endpoint with explicit period1/period2 and interval=1d.
-    /// Batch upserts all daily prices into historical_prices (INSERT OR REPLACE).
-    /// If Yahoo fetch fails or returns no data, falls back to whatever exists in the DB.
     pub async fn get_historical_prices(
         &self,
         symbol: &str,
         start_date: NaiveDate,
         end_date: NaiveDate,
         pool: &SqlitePool,
-    ) -> Result<Vec<(NaiveDate, f64)>> {
+    ) -> Result<Vec<(NaiveDate, Decimal)>> {
         let start_ts = start_date
             .and_hms_opt(0, 0, 0)
             .unwrap()
@@ -397,11 +404,12 @@ impl CurrencyService {
         for (i, ts) in timestamps.iter().enumerate() {
             if i < close_prices.len() {
                 if let Some(close) = close_prices[i] {
-                    if close > 0.0 {
+                    let price = f64_to_decimal(close);
+                    if price > Decimal::ZERO {
                         let date = DateTime::from_timestamp(*ts, 0)
                             .map(|dt| dt.date_naive())
                             .unwrap_or_default();
-                        daily_prices.push((date, close));
+                        daily_prices.push((date, price));
                     }
                 }
             }
@@ -415,7 +423,7 @@ impl CurrencyService {
                 )
                 .bind(symbol)
                 .bind(*date)
-                .bind(*price)
+                .bind(crate::db_types::decimal_to_str(price))
                 .execute(&mut *tx)
                 .await;
             }
@@ -426,12 +434,10 @@ impl CurrencyService {
             return self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await;
         }
 
-        // Merge with DB prices for any dates not covered by Yahoo Finance
-        // This ensures we have prices for today even when Yahoo hasn't closed the market yet
         let db_prices = self.get_historical_prices_from_db(symbol, start_date, end_date, pool).await?;
         let yahoo_dates: std::collections::HashSet<NaiveDate> = daily_prices.iter().map(|(d, _)| *d).collect();
-        
-        let mut merged: Vec<(NaiveDate, f64)> = daily_prices;
+
+        let mut merged: Vec<(NaiveDate, Decimal)> = daily_prices;
         for (date, price) in db_prices {
             if !yahoo_dates.contains(&date) {
                 merged.push((date, price));
@@ -448,7 +454,7 @@ impl CurrencyService {
         start_date: NaiveDate,
         end_date: NaiveDate,
         pool: &SqlitePool,
-    ) -> Result<Vec<(NaiveDate, f64)>> {
+    ) -> Result<Vec<(NaiveDate, Decimal)>> {
         let prices = sqlx::query_as::<_, HistoricalPrice>(
             "SELECT * FROM historical_prices WHERE symbol = ? AND date >= ? AND date <= ?"
         )
@@ -458,7 +464,7 @@ impl CurrencyService {
         .fetch_all(pool)
         .await?;
 
-        Ok(prices.into_iter().map(|p| (p.date, p.close_price)).collect())
+        Ok(prices.into_iter().map(|p| (p.date, crate::db_types::str_to_decimal(&p.close_price))).collect())
     }
 
     pub fn detect_currency(symbol: &str) -> String {
@@ -490,6 +496,39 @@ impl CurrencyService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn f64_to_decimal_round_trips_cleanly() {
+        for (input, expected) in [
+            (160.32_f64, "160.32"),
+            (9.99_f64, "9.99"),
+            (0.1_f64, "0.1"),
+            (1.0_f64, "1"),
+        ] {
+            assert_eq!(
+                f64_to_decimal(input).to_string(),
+                expected,
+                "input {input} should round-trip to {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn test_redact_url_removes_api_token() {
+        let url = "https://eodhd.com/api/search/AAPL.US?api_token=secret123&fmt=json";
+        assert_eq!(
+            CurrencyService::redact_url(url),
+            "https://eodhd.com/api/search/AAPL.US?api_token=***&fmt=json"
+        );
+        assert!(!CurrencyService::redact_url(url).contains("secret123"));
+    }
+
+    #[test]
+    fn test_redact_url_passes_through_plain_url() {
+        let url = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL=USD";
+        assert_eq!(CurrencyService::redact_url(url), url);
+    }
 
     #[tokio::test]
     async fn test_same_currency_returns_one() {
@@ -497,7 +536,7 @@ mod tests {
         let date = DateTime::from_timestamp(1705312200, 0).unwrap();
         let result = svc.get_rate("USD", "USD", date).await;
         assert!(result.is_ok());
-        assert!((result.unwrap() - 1.0).abs() < f64::EPSILON);
+        assert_eq!(result.unwrap(), Decimal::ONE);
     }
 
     #[tokio::test]
@@ -505,16 +544,16 @@ mod tests {
         let svc = CurrencyService::new();
         let date1 = DateTime::from_timestamp(1700000001, 0).unwrap();
         let date2 = DateTime::from_timestamp(1700000001, 0).unwrap();
-        
+
         let r1 = svc.get_rate("GBP", "GBP", date1).await.unwrap();
         let r2 = svc.get_rate("GBP", "GBP", date2).await.unwrap();
-        assert!((r1 - r2).abs() < f64::EPSILON);
+        assert_eq!(r1, r2);
     }
 
     #[tokio::test]
     async fn test_get_price_uses_today_cached_price() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
-        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
             .execute(&pool)
             .await
             .unwrap();
@@ -525,19 +564,19 @@ mod tests {
         )
         .bind("TEST")
         .bind(today)
-        .bind(42.0)
+        .bind("42.0")
         .execute(&pool)
         .await;
 
         let svc = CurrencyService::new();
         let price = svc.get_price("TEST", None, &pool).await;
-        assert!((price - 42.0).abs() < f64::EPSILON);
+        assert_eq!(price, Decimal::from_str("42.0").unwrap());
     }
 
     #[tokio::test]
     async fn test_get_price_ignores_stale_cache() {
         let pool = SqlitePool::connect(":memory:").await.unwrap();
-        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price REAL)")
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
             .execute(&pool)
             .await
             .unwrap();
@@ -548,14 +587,13 @@ mod tests {
         )
         .bind("TEST")
         .bind(stale_date)
-        .bind(99.0)
+        .bind("99.0")
         .execute(&pool)
         .await;
 
         let svc = CurrencyService::new();
-        // Should not return stale price (99.0) - falls through to Yahoo fetch
         let price = svc.get_price("TEST", None, &pool).await;
-        assert!((price - 99.0).abs() > f64::EPSILON, "should not return stale cached price");
+        assert_ne!(price, Decimal::from_str("99.0").unwrap());
     }
 
     #[test]

@@ -12,9 +12,10 @@ import {
   Trash2
 } from 'lucide-react';
 import Dashboard from './components/Dashboard';
-import PortfolioDetail from './components/PortfolioDetail';
+import PortfolioDetail, { CreateTxPayload } from './components/PortfolioDetail';
 import AnalyticsView from './components/AnalyticsView';
 import { formatCurrency } from './utils/formatters';
+import { normalizePerformance, normalizeTaxSummary, normalizeTransactionList, normalizeAssetList } from './utils/decimal';
 import { 
   Portfolio, 
   PortfolioPerformance, 
@@ -75,25 +76,26 @@ export default function App() {
       const perfRes = await fetch(`${API_BASE}/portfolios/${id}/performance`);
       if (!perfRes.ok) throw new Error('Failed to load portfolio performance');
       const perfData = await perfRes.json();
-      setPerformance(perfData);
+      const normalizedPerf = normalizePerformance(perfData);
+      setPerformance(normalizedPerf);
 
       // 2. Fetch tax lot details
       const taxRes = await fetch(`${API_BASE}/portfolios/${id}/tax-summary?strategy=${strategy}&threshold_days=${thresholdDays}`);
       if (!taxRes.ok) throw new Error('Failed to load tax lot summary');
       const taxData = await taxRes.json();
-      setTaxSummary(taxData);
+      setTaxSummary(normalizeTaxSummary(taxData));
 
       // 3. Fetch transactions list
       const txRes = await fetch(`${API_BASE}/portfolios/${id}/transactions/`);
       if (!txRes.ok) throw new Error('Failed to load transactions');
       const txData = await txRes.json();
-      setTransactions(txData);
+      setTransactions(normalizeTransactionList(txData));
 
       // 4. Refresh portfolio object to keep assets list in sync
       const portfolioRes = await fetch(`${API_BASE}/portfolios/${id}`);
       if (portfolioRes.ok) {
         const portfolioData = await portfolioRes.json();
-        setPortfolios(prev => prev.map(p => p.id === id ? { ...p, assets: portfolioData.assets } : p));
+        setPortfolios(prev => prev.map(p => p.id === id ? { ...p, assets: normalizeAssetList(portfolioData.assets) } : p));
       }
 
       setLoading(false);
@@ -177,7 +179,7 @@ export default function App() {
     }
   };
 
-  const handleAddTransaction = async (assetId: number, txData: Partial<Transaction>) => {
+  const handleAddTransaction = async (assetId: number, txData: CreateTxPayload) => {
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/portfolios/${selectedId}/assets/${assetId}/transactions/`, {

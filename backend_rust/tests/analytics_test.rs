@@ -36,19 +36,20 @@ async fn test_tax_summary_with_assets_fifo() {
     // Verify individual asset summary fields
     let asset = &parsed["assets"][0];
     assert_eq!(asset["symbol"], "AAPL");
-    assert!(asset["current_shares"].is_number());
-    assert!(asset["market_value"].is_number());
-    assert!(asset["unrealized_pnl"].is_number());
-    assert!(asset["realized_pnl"].is_number());
+    assert_eq!(asset["current_shares"], "100.0");
+    // Price-derived fields are dynamic (live quote) but must serialize as strings
+    assert!(asset["market_value"].is_string());
+    assert!(asset["unrealized_pnl"].is_string());
+    assert_eq!(asset["realized_pnl"], "0");
     assert!(asset["tax_lots"].is_array());
     // Verify tax lot data is present
     let lots = asset["tax_lots"].as_array().unwrap();
     assert_eq!(lots.len(), 1);
     let lot = &lots[0];
     assert!(lot["buy_date"].is_string());
-    assert!(lot["buy_price"].is_number());
-    assert!(lot["original_qty"].is_number());
-    assert!(lot["remaining_qty"].is_number());
+    assert_eq!(lot["buy_price"], "150.0");
+    assert_eq!(lot["original_qty"], "100.0");
+    assert_eq!(lot["remaining_qty"], "100.0");
 }
 
 #[tokio::test]

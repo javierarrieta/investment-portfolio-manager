@@ -73,9 +73,9 @@ async fn fetch_assets_for_portfolio(pool: &sqlx::sqlite::SqlitePool, portfolio_i
                 id: tx.id,
                 asset_id: tx.asset_id,
                 r#type: tx.r#type,
-                quantity: tx.quantity,
-                price: tx.price,
-                fee: tx.fee,
+                quantity: crate::db_types::str_to_decimal(&tx.quantity),
+                price: crate::db_types::str_to_decimal(&tx.price),
+                fee: crate::db_types::str_to_decimal(&tx.fee),
                 date: tx.date,
             });
     }

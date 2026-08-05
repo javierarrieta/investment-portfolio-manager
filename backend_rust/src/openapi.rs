@@ -28,6 +28,7 @@ use crate::api_routes::lookup::AssetLookupResult;
             models::Transaction,
             schemas::PortfolioCreate,
             schemas::PortfolioOut,
+            schemas::PortfolioUpdate,
             schemas::AssetCreate,
             schemas::AssetOut,
             schemas::TransactionCreate,
