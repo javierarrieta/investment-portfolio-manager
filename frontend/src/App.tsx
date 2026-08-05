@@ -15,7 +15,7 @@ import Dashboard from './components/Dashboard';
 import PortfolioDetail, { CreateTxPayload } from './components/PortfolioDetail';
 import AnalyticsView from './components/AnalyticsView';
 import { formatCurrency } from './utils/formatters';
-import { normalizePerformance, normalizeTaxSummary, normalizeTransactionList } from './utils/decimal';
+import { normalizePerformance, normalizeTaxSummary, normalizeTransactionList, normalizeAssetList } from './utils/decimal';
 import { 
   Portfolio, 
   PortfolioPerformance, 
@@ -95,7 +95,7 @@ export default function App() {
       const portfolioRes = await fetch(`${API_BASE}/portfolios/${id}`);
       if (portfolioRes.ok) {
         const portfolioData = await portfolioRes.json();
-        setPortfolios(prev => prev.map(p => p.id === id ? { ...p, assets: portfolioData.assets } : p));
+        setPortfolios(prev => prev.map(p => p.id === id ? { ...p, assets: normalizeAssetList(portfolioData.assets) } : p));
       }
 
       setLoading(false);

@@ -1,3 +1,11 @@
+/**
+ * Contract: decimal values (quantity, price, fee, market value, pnl, ...) arrive
+ * from the API as JSON *strings* (exact Decimal transport, see backend
+ * `decimal_json`). In memory the frontend stores them as *numbers*; every fetch
+ * response is normalized at the boundary in `src/utils/decimal.ts`, so components
+ * and these types always operate on numbers. Sending a create/update payload may
+ * use either string or number for decimal fields.
+ */
 export type AssetType = 'STOCK' | 'CRYPTO' | 'ETF' | 'MUTUAL_FUND';
 export type TransactionType = 'BUY' | 'SELL';
 

@@ -1,5 +1,5 @@
 import type {
-  HistoryItem, PerformanceMetrics, PortfolioPerformance, TaxSummary, Transaction,
+  Asset, HistoryItem, PerformanceMetrics, PortfolioPerformance, TaxSummary, Transaction,
 } from '../types';
 
 export type DecimalLike = string | number | null | undefined;
@@ -95,3 +95,22 @@ export const normalizeTransactionList = (txs: unknown[]): Transaction[] => txs.m
     fee: num(r, 'fee'),
   };
 });
+
+export const normalizeAsset = (a: unknown): Asset => {
+  const r = asRecord(a);
+  const sector = r.sector;
+  const transactions = Array.isArray(r.transactions) ? (r.transactions as unknown[]) : [];
+  return {
+    id: r.id as number,
+    portfolio_id: r.portfolio_id as number,
+    symbol: str(r, 'symbol'),
+    name: str(r, 'name'),
+    asset_type: r.asset_type as Asset['asset_type'],
+    sector: typeof sector === 'string' ? sector : undefined,
+    currency: str(r, 'currency'),
+    isin: r.isin === null || r.isin === undefined ? null : String(r.isin),
+    transactions: normalizeTransactionList(transactions),
+  };
+};
+
+export const normalizeAssetList = (assets: unknown[]): Asset[] => assets.map(normalizeAsset);
