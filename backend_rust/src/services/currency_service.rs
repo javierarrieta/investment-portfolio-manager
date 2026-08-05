@@ -73,6 +73,18 @@ impl CurrencyService {
         }
     }
 
+    fn redact_url(url: &str) -> String {
+        // EODHD embeds the API key as a query parameter; never surface it in
+        // logs or errors. Yahoo URLs have no query string, so they pass through.
+        match url.split_once("api_token=") {
+            Some((prefix, rest)) => {
+                let end = rest.find('&').unwrap_or(rest.len());
+                format!("{prefix}api_token=***{}", &rest[end..])
+            }
+            None => url.to_string(),
+        }
+    }
+
     async fn fetch_with_retry(&self, url: &str) -> Result<reqwest::Response> {
         let mut retry_delay = Duration::from_secs(1);
 
@@ -113,7 +125,7 @@ impl CurrencyService {
                     if attempt < MAX_RETRIES - 1 {
                         eprintln!(
                             "WARN: Request to {} failed (attempt {}/{}): {}, retrying in {:?}",
-                            url,
+                            Self::redact_url(url),
                             attempt + 1,
                             MAX_RETRIES,
                             e,
@@ -125,7 +137,7 @@ impl CurrencyService {
                     }
                     return Err(anyhow!(
                         "Request to {} failed after {} retries: {}",
-                        url,
+                        Self::redact_url(url),
                         MAX_RETRIES,
                         e
                     ));
@@ -133,7 +145,7 @@ impl CurrencyService {
             }
         }
 
-        Err(anyhow!("Max retries exceeded for {}", url))
+        Err(anyhow!("Max retries exceeded for {}", Self::redact_url(url)))
     }
 
     pub async fn get_rate(&self, from_curr: &str, to_curr: &str, date: DateTime<Utc>) -> Result<Decimal> {
@@ -484,6 +496,22 @@ impl CurrencyService {
 mod tests {
     use super::*;
     use std::str::FromStr;
+
+    #[test]
+    fn test_redact_url_removes_api_token() {
+        let url = "https://eodhd.com/api/search/AAPL.US?api_token=secret123&fmt=json";
+        assert_eq!(
+            CurrencyService::redact_url(url),
+            "https://eodhd.com/api/search/AAPL.US?api_token=***&fmt=json"
+        );
+        assert!(!CurrencyService::redact_url(url).contains("secret123"));
+    }
+
+    #[test]
+    fn test_redact_url_passes_through_plain_url() {
+        let url = "https://query1.finance.yahoo.com/v8/finance/chart/AAPL=USD";
+        assert_eq!(CurrencyService::redact_url(url), url);
+    }
 
     #[tokio::test]
     async fn test_same_currency_returns_one() {
