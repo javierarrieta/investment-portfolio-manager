@@ -9,12 +9,13 @@ use anyhow::{Result, anyhow};
 use crate::models::HistoricalPrice;
 use sqlx::sqlite::SqlitePool;
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 
 const RATE_LIMIT_DELAY: Duration = Duration::from_millis(200);
 const MAX_RETRIES: usize = 3;
 
 fn f64_to_decimal(v: f64) -> Decimal {
-    Decimal::from_f64_retain(v).unwrap_or(Decimal::ZERO)
+    Decimal::from_f64(v).unwrap_or(Decimal::ZERO)
 }
 
 #[derive(Deserialize)]
@@ -496,6 +497,22 @@ impl CurrencyService {
 mod tests {
     use super::*;
     use std::str::FromStr;
+
+    #[test]
+    fn f64_to_decimal_round_trips_cleanly() {
+        for (input, expected) in [
+            (160.32_f64, "160.32"),
+            (9.99_f64, "9.99"),
+            (0.1_f64, "0.1"),
+            (1.0_f64, "1"),
+        ] {
+            assert_eq!(
+                f64_to_decimal(input).to_string(),
+                expected,
+                "input {input} should round-trip to {expected}"
+            );
+        }
+    }
 
     #[test]
     fn test_redact_url_removes_api_token() {

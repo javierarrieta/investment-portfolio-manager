@@ -185,6 +185,31 @@ async fn migration_recovers_text_plus_leftover_old() {
 }
 
 #[tokio::test]
+async fn migration_recovers_text_plus_old_that_was_never_copied() {
+    // simulate crash between ADD and UPDATE: column is TEXT with '0' defaults,
+    // `_old` still holds the real data. Dropping `_old` without re-copying would
+    // lose the user's values.
+    let pool = SqlitePool::connect(":memory:").await.unwrap();
+    create_legacy_schema(&pool).await;
+    sqlx::query("ALTER TABLE transactions RENAME COLUMN quantity TO quantity_old")
+        .execute(&pool).await.unwrap();
+    sqlx::query("ALTER TABLE transactions ADD COLUMN quantity TEXT NOT NULL DEFAULT '0'")
+        .execute(&pool).await.unwrap();
+    // note: no UPDATE ran, so `quantity` is '0' and `quantity_old` has the data.
+
+    backend_rust::migrate_decimal_columns(&pool).await.unwrap();
+    assert_eq!(column_affinity(&pool, "transactions", "quantity").await, "TEXT");
+
+    let (qty,): (String,) = sqlx::query_as("SELECT quantity FROM transactions WHERE id = 1")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(str_to_decimal(&qty), rust_decimal::Decimal::from_str("100.0").unwrap());
+
+    let info: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as("PRAGMA table_info(transactions)").fetch_all(&pool).await.unwrap();
+    assert!(!info.iter().any(|r| r.1.ends_with("_old")), "no _old columns should remain");
+}
+
+#[tokio::test]
 async fn migration_recovers_non_text_plus_stray_old() {
     // simulate a crash that left both the original non-TEXT column and a stray
     // `_old` leftover (the `(Some(_), true)` branch of migrate_one_column):

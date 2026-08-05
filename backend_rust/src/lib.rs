@@ -152,7 +152,13 @@ async fn migrate_one_column(
 
     match (current.as_deref(), old_exists) {
         (Some("TEXT"), true) => {
-            // add happened, drop-leftover crash happened after ADD: finish the drop.
+            // add happened, drop-leftover crash happened after ADD: re-copy from
+            // `_old` (idempotent; harmless if the UPDATE already ran, and it
+            // recovers the real values if the crash landed before the UPDATE),
+            // then finish the drop.
+            sqlx::query(&format!("UPDATE {table} SET {column} = CAST({old} AS TEXT)"))
+                .execute(&mut *conn)
+                .await?;
             sqlx::query(&format!("ALTER TABLE {table} DROP COLUMN {old}"))
                 .execute(&mut *conn).await?;
             Ok(())

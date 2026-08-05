@@ -84,16 +84,16 @@ export interface components {
     };
     AssetTaxSummary: {
       asset_type: string;
-      average_cost: components["schemas"]["Decimal"];
-      current_price: components["schemas"]["Decimal"];
-      current_shares: components["schemas"]["Decimal"];
-      market_value: components["schemas"]["Decimal"];
-      realized_pnl: components["schemas"]["Decimal"];
+      average_cost: string;
+      current_price: string;
+      current_shares: string;
+      market_value: string;
+      realized_pnl: string;
       symbol: string;
       tax_lots: components["schemas"]["TaxLot"][];
-      total_cost: components["schemas"]["Decimal"];
-      unrealized_pnl: components["schemas"]["Decimal"];
-      unrealized_roi: components["schemas"]["Decimal"];
+      total_cost: string;
+      unrealized_pnl: string;
+      unrealized_roi: string;
     };
     Portfolio: {
       base_currency: string;
@@ -116,18 +116,23 @@ export interface components {
       id: number;
       name: string;
     };
+    PortfolioUpdate: {
+      currency: string;
+    };
     TaxLot: {
-      buy_date: components["schemas"]["DateTime"];
-      buy_price: components["schemas"]["Decimal"];
-      latent_gain_loss: components["schemas"]["Decimal"];
-      latent_roi: components["schemas"]["Decimal"];
-      original_qty: components["schemas"]["Decimal"];
-      remaining_qty: components["schemas"]["Decimal"];
+      /** Format: date-time */
+      buy_date: string;
+      buy_price: string;
+      latent_gain_loss: string;
+      latent_roi: string;
+      original_qty: string;
+      remaining_qty: string;
     };
     Transaction: {
       /** Format: int32 */
       asset_id: number;
-      date: components["schemas"]["DateTime"];
+      /** Format: date-time */
+      date: string;
       fee: string;
       /** Format: int32 */
       id: number;
@@ -136,21 +141,23 @@ export interface components {
       type: string;
     };
     TransactionCreate: {
-      date: components["schemas"]["DateTime"];
-      fee: components["schemas"]["Decimal"];
-      price: components["schemas"]["Decimal"];
-      quantity: components["schemas"]["Decimal"];
+      /** Format: date-time */
+      date: string;
+      fee: string;
+      price: string;
+      quantity: string;
       type: string;
     };
     TransactionOut: {
       /** Format: int32 */
       asset_id: number;
-      date: components["schemas"]["DateTime"];
-      fee: components["schemas"]["Decimal"];
+      /** Format: date-time */
+      date: string;
+      fee: string;
       /** Format: int32 */
       id: number;
-      price: components["schemas"]["Decimal"];
-      quantity: components["schemas"]["Decimal"];
+      price: string;
+      quantity: string;
       type: string;
     };
   };

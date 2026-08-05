@@ -57,8 +57,8 @@ pub mod decimal_json {
             }
 
             fn visit_f64<E: serde::de::Error>(self, v: f64) -> Result<Decimal, E> {
-                // Lenient fallback for legacy numeric clients; inherently lossy.
-                Decimal::from_f64_retain(v).ok_or_else(|| E::custom("f64 does not fit decimal"))
+                // Lenient fallback for legacy numeric clients; rounds to 28-digit precision.
+                Decimal::from_f64(v).ok_or_else(|| E::custom("f64 does not fit decimal"))
             }
         }
 
@@ -93,6 +93,14 @@ mod tests {
     fn string_input_is_exact() {
         let w: Wrap = serde_json::from_str(r#"{"d":"9.99"}"#).unwrap();
         assert_eq!(w.d, Decimal::from_str("9.99").unwrap());
+    }
+
+    #[test]
+    fn numeric_f64_input_round_trips_cleanly() {
+        let w: Wrap = serde_json::from_str(r#"{"d":160.32}"#).unwrap();
+        assert_eq!(w.d.to_string(), "160.32");
+        let w: Wrap = serde_json::from_str(r#"{"d":9.99}"#).unwrap();
+        assert_eq!(w.d.to_string(), "9.99");
     }
 
     #[test]

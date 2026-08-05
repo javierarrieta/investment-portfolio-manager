@@ -62,7 +62,12 @@ impl StatsEngine {
                 _ if value > Decimal::ZERO => Decimal::ZERO,
                 _ => {
                     twr_acc *= 1.0;
-                    prev_value = Some(value);
+                    // Keep prev_value as the last non-zero value: overwriting it
+                    // with a holiday's 0 would make the next real week compute a
+                    // 0.0 return instead of the actual change.
+                    if value > Decimal::ZERO {
+                        prev_value = Some(value);
+                    }
                     weekly_history.push(serde_json::json!({
                         "date": date,
                         "value": value.to_string(),
@@ -453,6 +458,32 @@ mod tests {
         assert_eq!(holiday_twr, gain_twr);
         assert_ne!(holiday_twr, "0.0");
         assert_ne!(holiday_twr, "0");
+    }
+
+    #[tokio::test]
+    async fn test_aggregate_weekly_recovery_week_returns_real_change() {
+        // A zero-value (holiday) week must not poison prev_value: the week after
+        // a holiday should report its real return against the last non-zero
+        // value, not 0.0.
+        let daily_history = vec![
+            // baseline week, establishes prev_value = 100
+            serde_json::json!({"date":"2023-12-25","value":"100.0","daily_return":"0.0","twr":"0.0"}),
+            // week1: gains to 110 -> +10%
+            serde_json::json!({"date":"2024-01-02","value":"110.0","daily_return":"0.10","twr":"0.10"}),
+            // week2: holiday (value 0)
+            serde_json::json!({"date":"2024-01-08","value":"0","daily_return":"0.0","twr":"0.10"}),
+            // week3: 110 -> 121 should be +10%, not 0.0
+            serde_json::json!({"date":"2024-01-15","value":"121.0","daily_return":"0.10","twr":"0.21"}),
+        ];
+        let weekly = StatsEngine::aggregate_weekly(daily_history).await;
+        let recovery = &weekly[3];
+        assert_eq!(
+            recovery.get("daily_return").unwrap().as_str().unwrap(),
+            "0.10",
+            "week after holiday must report its real +10% return"
+        );
+        let twr: f64 = recovery.get("twr").unwrap().as_str().unwrap().parse().unwrap();
+        assert!(twr > 0.20, "twr must compound past the 0.10 carry, got {twr}");
     }
 
     #[tokio::test]
