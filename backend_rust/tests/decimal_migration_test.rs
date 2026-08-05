@@ -183,3 +183,32 @@ async fn migration_recovers_text_plus_leftover_old() {
         sqlx::query_as("PRAGMA table_info(transactions)").fetch_all(&pool).await.unwrap();
     assert!(!info.iter().any(|r| r.1.ends_with("_old")), "no _old columns should remain");
 }
+
+#[tokio::test]
+async fn migration_recovers_non_text_plus_stray_old() {
+    // simulate a crash that left both the original non-TEXT column and a stray
+    // `_old` leftover (the `(Some(_), true)` branch of migrate_one_column):
+    // the leftover must be dropped, then the column migrated to TEXT.
+    let pool = SqlitePool::connect(":memory:").await.unwrap();
+    create_legacy_schema(&pool).await;
+    sqlx::query("ALTER TABLE transactions RENAME COLUMN quantity TO quantity_old")
+        .execute(&pool).await.unwrap();
+    sqlx::query("ALTER TABLE transactions ADD COLUMN quantity REAL")
+        .execute(&pool).await.unwrap();
+    sqlx::query("UPDATE transactions SET quantity = quantity_old WHERE id = 1")
+        .execute(&pool).await.unwrap();
+
+    backend_rust::migrate_decimal_columns(&pool).await.unwrap();
+
+    assert_eq!(column_affinity(&pool, "transactions", "quantity").await, "TEXT");
+    assert_eq!(column_affinity(&pool, "transactions", "price").await, "TEXT");
+    assert_eq!(column_affinity(&pool, "transactions", "fee").await, "TEXT");
+
+    let (qty,): (String,) = sqlx::query_as("SELECT quantity FROM transactions WHERE id = 1")
+        .fetch_one(&pool).await.unwrap();
+    assert_eq!(str_to_decimal(&qty), rust_decimal::Decimal::from_str("100.0").unwrap());
+
+    let info: Vec<(i64, String, String, i64, Option<String>, i64)> =
+        sqlx::query_as("PRAGMA table_info(transactions)").fetch_all(&pool).await.unwrap();
+    assert!(!info.iter().any(|r| r.1.ends_with("_old")), "no _old columns should remain");
+}

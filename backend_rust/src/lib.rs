@@ -218,12 +218,19 @@ pub async fn migrate_decimal_columns(pool: &SqlitePool) -> Result<(), sqlx::Erro
     // schema bug that makes `DROP COLUMN` followed by `RENAME COLUMN` + `ADD COLUMN`
     // fail on file-backed databases (the brief's original pool-based approach only
     // works on `:memory:` connections); legacy mode avoids the buggy code path.
+    // The setting is reset before the connection is returned to the pool so it
+    // cannot leak modern `ALTER` semantics into unrelated pooled connections.
     let mut conn = pool.acquire().await?;
     sqlx::query("PRAGMA legacy_alter_table = ON").execute(&mut *conn).await?;
-    for column in ["quantity", "price", "fee"] {
-        migrate_one_column(&mut conn, "transactions", column).await?;
-    }
-    migrate_one_column(&mut conn, "historical_prices", "close_price").await
+    let result = (async {
+        for column in ["quantity", "price", "fee"] {
+            migrate_one_column(&mut conn, "transactions", column).await?;
+        }
+        migrate_one_column(&mut conn, "historical_prices", "close_price").await
+    })
+    .await;
+    sqlx::query("PRAGMA legacy_alter_table = OFF").execute(&mut *conn).await?;
+    result
 }
 
 pub fn build_rocket(pool: SqlitePool, currency_service: CurrencyService, cors: Cors) -> Rocket<Build> {
