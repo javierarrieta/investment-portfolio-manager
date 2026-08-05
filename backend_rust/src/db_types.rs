@@ -72,7 +72,7 @@ mod tests {
     use rust_decimal::Decimal;
     use std::str::FromStr;
 
-    #[derive(serde::Serialize, serde::Deserialize)]
+    #[derive(Debug, serde::Serialize, serde::Deserialize)]
     struct Wrap { #[serde(with = "decimal_json")] d: Decimal }
 
     #[test]
@@ -115,7 +115,8 @@ mod tests {
 
     #[test]
     fn invalid_type_triggers_expecting() {
-        let res = serde_json::from_str::<Wrap>(r#"{"d":true}"#);
-        assert!(res.is_err());
+        let err = serde_json::from_str::<Wrap>(r#"{"d":true}"#).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("a string or number"), "unexpected error: {msg}");
     }
 }
