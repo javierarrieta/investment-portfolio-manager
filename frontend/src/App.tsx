@@ -440,21 +440,22 @@ export default function App() {
                     <tbody>
                       {transactions.map((tx) => {
                         const asset = currentPortfolio.assets.find(a => a.id === tx.asset_id);
+                        const isSplit = tx.type === 'SPLIT';
                         const cost = tx.quantity * tx.price;
-                        const total = tx.type === 'BUY' ? (cost + tx.fee) : (cost - tx.fee);
+                        const total = isSplit ? null : (tx.type === 'BUY' ? (cost + tx.fee) : (cost - tx.fee));
                         return (
                           <tr key={tx.id}>
                             <td>{new Date(tx.date).toLocaleString()}</td>
                             <td style={{ fontWeight: 600 }}>{asset ? asset.symbol : 'Unknown'}</td>
                             <td>
-                              <span style={{ color: tx.type === 'BUY' ? 'var(--color-success)' : 'var(--color-danger)', fontWeight: 700 }}>
+                              <span style={{ color: isSplit ? 'var(--text-secondary)' : (tx.type === 'BUY' ? 'var(--color-success)' : 'var(--color-danger)'), fontWeight: 700 }}>
                                 {tx.type}
                               </span>
                             </td>
-                            <td>{tx.quantity.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
-                             <td>{formatCurrency(tx.price, asset?.currency || 'USD')}</td>
-                             <td>{formatCurrency(tx.fee, asset?.currency || 'USD')}</td>
-                             <td style={{ fontWeight: 600 }}>{formatCurrency(total, asset?.currency || 'USD')}</td>
+                            <td>{isSplit ? `${tx.quantity} : ${tx.price}` : tx.quantity.toLocaleString(undefined, { maximumFractionDigits: 6 })}</td>
+                            <td>{isSplit ? '—' : formatCurrency(tx.price, asset?.currency || 'USD')}</td>
+                            <td>{isSplit ? '—' : formatCurrency(tx.fee, asset?.currency || 'USD')}</td>
+                            <td style={{ fontWeight: 600 }}>{isSplit ? '—' : formatCurrency(total as number, asset?.currency || 'USD')}</td>
                             <td>
                               <button 
                                 onClick={() => handleDeleteTransaction(tx.id)}

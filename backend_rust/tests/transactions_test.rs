@@ -103,6 +103,62 @@ async fn test_create_transaction() {
 }
 
 #[tokio::test]
+async fn test_create_split_transaction_forces_fee_to_zero() {
+    let pool = setup_db().await;
+    let port_id = seed_portfolio(&pool, "Split Tx", "USD").await;
+    let asset_id = seed_asset(&pool, port_id, "NVDA", "Nvidia").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let body = Json(serde_json::json!({
+        "type": "SPLIT",
+        "quantity": 2.0,
+        "price": 1.0,
+        "fee": 5.0,
+        "date": "2024-06-15T00:00:00Z"
+    }));
+
+    let resp = client.post(format!("/api/portfolios/{}/assets/{}/transactions", port_id, asset_id))
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::Ok);
+    let body_str = resp.into_string().await.unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+    assert_eq!(parsed["type"], "SPLIT");
+    assert_eq!(parsed["quantity"], "2");
+    assert_eq!(parsed["price"], "1");
+    assert_eq!(parsed["fee"], "0");
+}
+
+#[tokio::test]
+async fn test_create_split_transaction_rejects_non_positive_ratio() {
+    let pool = setup_db().await;
+    let port_id = seed_portfolio(&pool, "Bad Split", "USD").await;
+    let asset_id = seed_asset(&pool, port_id, "INTC", "Intel").await;
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let body = Json(serde_json::json!({
+        "type": "SPLIT",
+        "quantity": 0.0,
+        "price": 1.0,
+        "fee": 0.0,
+        "date": "2024-06-15T00:00:00Z"
+    }));
+
+    let resp = client.post(format!("/api/portfolios/{}/assets/{}/transactions", port_id, asset_id))
+        .header(rocket::http::ContentType::JSON)
+        .body(body.to_string())
+        .dispatch()
+        .await;
+
+    assert_eq!(resp.status(), Status::BadRequest);
+}
+
+#[tokio::test]
 async fn test_create_transaction_nonexistent_asset_returns_404() {
     let pool = setup_db().await;
     let port_id = seed_portfolio(&pool, "404 Tx", "USD").await;

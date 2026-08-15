@@ -132,7 +132,7 @@ describe('PortfolioDetail', () => {
 
     await user.click(screen.getByText('Log Transaction'))
 
-    expect(screen.getByText('Log Buy/Sell Transaction')).toBeVisible()
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
   })
 
   it('opens asset modal when "Add Asset Symbol" is clicked', async () => {
@@ -251,7 +251,7 @@ describe('PortfolioDetail', () => {
     )
 
     await user.click(screen.getByText('Log Transaction'))
-    expect(screen.getByText('Log Buy/Sell Transaction')).toBeVisible()
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
 
     const buyOption = screen.getByText('BUY')
     const typeSelect = buyOption.closest('select') as HTMLSelectElement
@@ -260,6 +260,35 @@ describe('PortfolioDetail', () => {
 
     await user.selectOptions(typeSelect, 'SELL')
     expect(typeSelect.value).toBe('SELL')
+  })
+
+  it('allows selecting SPLIT in transaction modal and hides fee', async () => {
+    const user = userEvent.setup()
+    render(
+      <PortfolioDetail
+        portfolio={mockPortfolio}
+        taxSummary={mockTaxSummary}
+        onAddAsset={noop}
+        onDeleteAsset={noop}
+        onDeletePortfolio={noop}
+        onAddTransaction={noop}
+        strategy="FIFO"
+        setStrategy={() => {}}
+        thresholdDays={30}
+        setThresholdDays={() => {}}
+      />
+    )
+
+    await user.click(screen.getByText('Log Transaction'))
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
+
+    const buyOption = screen.getByText('BUY')
+    const typeSelect = buyOption.closest('select') as HTMLSelectElement
+    await user.selectOptions(typeSelect, 'SPLIT')
+    expect(typeSelect.value).toBe('SPLIT')
+
+    expect(screen.getByText(/Shares after : Shares before/i)).toBeVisible()
+    expect(screen.queryByText(/Transaction Fee/i)).not.toBeInTheDocument()
   })
 
   it('calls onAddTransaction when transaction form is submitted', async () => {
@@ -283,7 +312,7 @@ describe('PortfolioDetail', () => {
 
     // Open the transaction modal
     await user.click(screen.getAllByText('Log Transaction')[0])
-    expect(screen.getByText('Log Buy/Sell Transaction')).toBeVisible()
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
 
     // Select asset
     const aaplOption = screen.getByText('AAPL (Apple Inc.)')

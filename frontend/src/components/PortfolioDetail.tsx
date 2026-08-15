@@ -75,6 +75,7 @@ export default function PortfolioDetail({
   const [showTxModal, setShowTxModal] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
     const [showImportModal, setShowImportModal] = useState(false);
+  const [txError, setTxError] = useState<string | null>(null);
   
   // Forms State
   const [assetForm, setAssetForm] = useState<Partial<Asset>>({ symbol: '', name: '', asset_type: 'STOCK', sector: '', currency: 'USD', isin: '' });
@@ -121,16 +122,28 @@ export default function PortfolioDetail({
 
   const handleTxSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!txForm.asset_id || !txForm.quantity || !txForm.price) return;
+    const isSplit = txForm.type === 'SPLIT';
+    if (!txForm.asset_id) { setTxError('Select an asset'); return; }
+    if (!txForm.quantity || !txForm.price) { setTxError('Quantity and price are required'); return; }
+    if (isSplit) {
+      const qty = parseFloat(txForm.quantity);
+      const price = parseFloat(txForm.price);
+      if (!(qty > 0) || !(price > 0)) {
+        setTxError('Split ratio must be positive (shares after : shares before)');
+        return;
+      }
+    }
+    setTxError(null);
     const payload: CreateTxPayload = {
       type: txForm.type,
       quantity: txForm.quantity,
       price: txForm.price,
-      fee: txForm.fee,
+      fee: isSplit ? '0' : txForm.fee,
       date: new Date(txForm.date).toISOString()
     };
     await onAddTransaction(Number(txForm.asset_id), payload);
     setTxForm({ asset_id: '', type: 'BUY', quantity: '', price: '', fee: '0.0', date: new Date().toISOString().slice(0, 16) });
+    setTxError(null);
     setShowTxModal(false);
   };
 
@@ -456,7 +469,7 @@ export default function PortfolioDetail({
         {showTxModal && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
           <div className="glass-card" style={{ padding: '32px', width: '450px', background: '#121929' }}>
-            <h3 style={{ marginBottom: '20px' }}>Log Buy/Sell Transaction</h3>
+            <h3 style={{ marginBottom: '20px' }}>Log Buy/Sell/Split Transaction</h3>
             <form onSubmit={handleTxSubmit}>
               <div className="form-group">
                 <label>Select Asset</label>
@@ -481,42 +494,80 @@ export default function PortfolioDetail({
                 >
                   <option value="BUY">BUY</option>
                   <option value="SELL">SELL</option>
+                  <option value="SPLIT">SPLIT</option>
                 </select>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+              {txForm.type === 'SPLIT' ? (
                 <div className="form-group">
-                  <label>Quantity</label>
-                  <input 
-                    type="number" 
-                    step="any" 
-                    value={txForm.quantity} 
-                    onChange={(e) => setTxForm({ ...txForm, quantity: e.target.value })} 
-                    className="form-control"
-                    required 
-                  />
+                  <label>Split Ratio (Shares after : Shares before)</label>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Shares After</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        min="0"
+                        value={txForm.quantity} 
+                        onChange={(e) => setTxForm({ ...txForm, quantity: e.target.value })} 
+                        className="form-control"
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Shares Before</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        min="0"
+                        value={txForm.price} 
+                        onChange={(e) => setTxForm({ ...txForm, price: e.target.value })} 
+                        className="form-control"
+                        required 
+                      />
+                    </div>
+                  </div>
+                  <p style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                    e.g. 2:1 forward split → 2 : 1; 1:10 reverse split → 1 : 10
+                  </p>
                 </div>
-                <div className="form-group">
-                  <label>Price ({txCurrency})</label>
-                  <input 
-                    type="number" 
-                    step="any" 
-                    value={txForm.price} 
-                    onChange={(e) => setTxForm({ ...txForm, price: e.target.value })} 
-                    className="form-control"
-                    required 
-                  />
-                </div>
-              </div>
-              <div className="form-group">
-                <label>Transaction Fee ({txCurrency})</label>
-                <input 
-                  type="number" 
-                  step="any" 
-                  value={txForm.fee} 
-                  onChange={(e) => setTxForm({ ...txForm, fee: e.target.value })} 
-                  className="form-control" 
-                />
-              </div>
+              ) : (
+                <>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+                    <div className="form-group">
+                      <label>Quantity</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        value={txForm.quantity} 
+                        onChange={(e) => setTxForm({ ...txForm, quantity: e.target.value })} 
+                        className="form-control"
+                        required 
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label>Price ({txCurrency})</label>
+                      <input 
+                        type="number" 
+                        step="any" 
+                        value={txForm.price} 
+                        onChange={(e) => setTxForm({ ...txForm, price: e.target.value })} 
+                        className="form-control"
+                        required 
+                      />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label>Transaction Fee ({txCurrency})</label>
+                    <input 
+                      type="number" 
+                      step="any" 
+                      value={txForm.fee} 
+                      onChange={(e) => setTxForm({ ...txForm, fee: e.target.value })} 
+                      className="form-control" 
+                    />
+                  </div>
+                </>
+              )}
               <div className="form-group">
                 <label>Date & Time</label>
                 <input 
@@ -527,6 +578,11 @@ export default function PortfolioDetail({
                   required 
                 />
               </div>
+              {txError && (
+                <div style={{ fontSize: '0.875rem', color: 'var(--color-danger)', marginTop: '8px' }}>
+                  {txError}
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '24px' }}>
                 <button type="button" onClick={() => setShowTxModal(false)} className="btn btn-secondary">Cancel</button>
                 <button type="submit" className="btn btn-primary">Log Transaction</button>

@@ -208,6 +208,12 @@ impl StatsEngine {
                 } else if tx.r#type.to_uppercase() == "SELL" {
                     let tx_qty = crate::db_types::str_to_decimal(&tx.quantity);
                     *entry = (*entry - tx_qty).max(Decimal::ZERO);
+                } else if tx.r#type.to_uppercase() == "SPLIT" {
+                    let numerator = crate::db_types::str_to_decimal(&tx.quantity);
+                    let denominator = crate::db_types::str_to_decimal(&tx.price);
+                    if numerator > Decimal::ZERO && denominator > Decimal::ZERO {
+                        *entry *= numerator / denominator;
+                    }
                 }
                 tx_idx += 1;
             }
@@ -386,6 +392,96 @@ mod tests {
         let metrics = result.get("metrics").unwrap();
         let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
         assert_eq!(value, "0");
+    }
+
+    #[tokio::test]
+    async fn test_split_adjusts_historical_quantity() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let today = Utc::now().date_naive();
+        let split_date = today - chrono::Duration::days(5);
+        let sell_date = today - chrono::Duration::days(2);
+        let buy_date = split_date - chrono::Duration::days(30);
+        let start_date = buy_date - chrono::Duration::days(365);
+
+        let symbol = "SPLITSTTEST";
+        let mut curr = start_date;
+        while curr <= today {
+            let price = if curr < split_date { "100.0" } else { "50.0" };
+            sqlx::query("INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)")
+                .bind(symbol)
+                .bind(curr)
+                .bind(price)
+                .execute(&pool)
+                .await
+                .unwrap();
+            match curr.succ_opt() {
+                Some(next) => curr = next,
+                None => break,
+            }
+        }
+
+        let asset = Asset {
+            id: 1,
+            portfolio_id: 1,
+            symbol: symbol.to_string(),
+            name: "Split Test".to_string(),
+            asset_type: "STOCK".to_string(),
+            sector: None,
+            currency: "USD".to_string(),
+            isin: None,
+        };
+        let buy = Transaction {
+            id: 1,
+            asset_id: 1,
+            r#type: "BUY".to_string(),
+            quantity: "100.0".to_string(),
+            price: "100.0".to_string(),
+            fee: "0.0".to_string(),
+            date: buy_date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        };
+        let split = Transaction {
+            id: 2,
+            asset_id: 1,
+            r#type: "SPLIT".to_string(),
+            quantity: "2.0".to_string(),
+            price: "1.0".to_string(),
+            fee: "0.0".to_string(),
+            date: split_date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        };
+        let sell = Transaction {
+            id: 3,
+            asset_id: 1,
+            r#type: "SELL".to_string(),
+            quantity: "50.0".to_string(),
+            price: "50.0".to_string(),
+            fee: "0.0".to_string(),
+            date: sell_date.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        };
+
+        let svc = CurrencyService::new();
+        let result = StatsEngine::calculate_portfolio_performance(
+            &pool,
+            &[asset],
+            &[buy, split, sell],
+            "USD",
+            &svc,
+        ).await.unwrap();
+
+        // 100 shares bought pre-split, 2:1 split -> 200, sell 50 -> 150 remaining.
+        // Final price (post-split) is 50, so value = 150 * 50 = 7500. Without split
+        // handling the sell would apply to 100 shares leaving 50 -> value 2500.
+        let metrics = result.get("metrics").unwrap();
+        let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
+        assert_eq!(
+            Decimal::from_str(value).unwrap(),
+            Decimal::from_str("7500").unwrap(),
+            "expected 150 shares at 50, got value {value}"
+        );
     }
 
     #[tokio::test]
