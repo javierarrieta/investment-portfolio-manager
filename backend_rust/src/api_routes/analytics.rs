@@ -54,6 +54,10 @@ pub async fn get_portfolio_tax_summary(
     let threshold_val = threshold_days.unwrap_or(30);
 
     for asset in assets {
+        // Auto-detect and persist any unrecorded stock splits for this asset
+        // before computing tax lots, so they feed into P&L and value.
+        let _ = currency_service.sync_splits_for_asset(&asset, pool.inner()).await;
+
         let transactions = sqlx::query_as::<_, Transaction>("SELECT * FROM transactions WHERE asset_id = ?")
             .bind(asset.id)
             .fetch_all(pool.inner())
@@ -117,6 +121,12 @@ pub async fn get_portfolio_performance(
         .fetch_all(pool.inner())
         .await
         .map_err(|_| Status::InternalServerError)?;
+
+    // Auto-detect and persist any unrecorded stock splits so historical
+    // portfolio value is scaled correctly.
+    for asset in &assets {
+        let _ = currency_service.sync_splits_for_asset(asset, pool.inner()).await;
+    }
 
     let transactions = sqlx::query_as::<_, Transaction>(
         "SELECT * FROM transactions WHERE asset_id IN (SELECT id FROM assets WHERE portfolio_id = ?)"

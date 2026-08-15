@@ -6,7 +6,7 @@ use chrono::{DateTime, Utc, NaiveDate};
 use reqwest::Client;
 use serde::Deserialize;
 use anyhow::{Result, anyhow};
-use crate::models::HistoricalPrice;
+use crate::models::{Asset, HistoricalPrice};
 use sqlx::sqlite::SqlitePool;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
@@ -16,6 +16,59 @@ const MAX_RETRIES: usize = 3;
 
 fn f64_to_decimal(v: f64) -> Decimal {
     Decimal::from_f64(v).unwrap_or(Decimal::ZERO)
+}
+
+/// Insert detected split events as `SPLIT` transactions for an asset, deduplicated.
+///
+/// Each event is `(split_date, numerator, denominator)` where the ratio is
+/// `numerator : denominator` (shares after : shares before). Splits dated before
+/// `earliest_tx_date` are skipped (they would be no-ops since no lots existed).
+/// A split already recorded for the asset on the same calendar day is not
+/// duplicated. Returns the number of transactions inserted.
+pub async fn apply_split_events(
+    asset_id: i32,
+    earliest_tx_date: Option<NaiveDate>,
+    events: &[(NaiveDate, u32, u32)],
+    pool: &SqlitePool,
+) -> Result<usize, sqlx::Error> {
+    let mut inserted = 0;
+    for (split_date, numerator, denominator) in events {
+        if *numerator == 0 || *denominator == 0 {
+            continue;
+        }
+        if let Some(earliest) = earliest_tx_date {
+            if *split_date < earliest {
+                continue;
+            }
+        }
+
+        let existing: (i64,) = sqlx::query_as(
+            "SELECT COUNT(*) FROM transactions
+             WHERE asset_id = ? AND type = 'SPLIT' AND date(date) = ?"
+        )
+        .bind(asset_id)
+        .bind(*split_date)
+        .fetch_one(pool)
+        .await?;
+
+        if existing.0 > 0 {
+            continue;
+        }
+
+        let dt = split_date.and_hms_opt(0, 0, 0).unwrap().and_utc();
+        sqlx::query(
+            "INSERT INTO transactions (asset_id, type, quantity, price, fee, date)
+             VALUES (?, 'SPLIT', ?, ?, '0', ?)"
+        )
+        .bind(asset_id)
+        .bind(numerator.to_string())
+        .bind(denominator.to_string())
+        .bind(dt)
+        .execute(pool)
+        .await?;
+        inserted += 1;
+    }
+    Ok(inserted)
 }
 
 #[derive(Deserialize)]
@@ -33,6 +86,21 @@ struct ChartResult {
     indicators: Indicators,
     #[allow(dead_code)]
     timestamp: Vec<i64>,
+    #[serde(default)]
+    events: Option<ChartEvents>,
+}
+
+#[derive(Deserialize, Default)]
+struct ChartEvents {
+    #[serde(default)]
+    splits: Option<std::collections::HashMap<i64, SplitEvent>>,
+}
+
+#[derive(Deserialize)]
+struct SplitEvent {
+    date: i64,
+    numerator: f64,
+    denominator: f64,
 }
 
 #[derive(Deserialize)]
@@ -467,6 +535,104 @@ impl CurrencyService {
         Ok(prices.into_iter().map(|p| (p.date, crate::db_types::str_to_decimal(&p.close_price))).collect())
     }
 
+    /// Fetch Yahoo Finance split history for an asset and insert any splits not
+    /// already recorded as `SPLIT` transactions. Runs at most once per symbol per
+    /// 30-day window (tracked in the `split_sync` table). Splits dated before the
+    /// asset's first transaction are skipped. Returns the number inserted.
+    pub async fn sync_splits_for_asset(
+        &self,
+        asset: &Asset,
+        pool: &SqlitePool,
+    ) -> Result<usize> {
+        let today = Utc::now().date_naive();
+
+        let last_sync: Option<(String,)> = sqlx::query_as(
+            "SELECT last_synced_at FROM split_sync WHERE symbol = ?"
+        )
+        .bind(&asset.symbol)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some((last,)) = last_sync {
+            if let Ok(last_date) = NaiveDate::parse_from_str(&last, "%Y-%m-%d") {
+                if (today - last_date).num_days() < 30 {
+                    return Ok(0);
+                }
+            }
+        }
+
+        let earliest: Option<(NaiveDate,)> = sqlx::query_as(
+            "SELECT MIN(date(date)) FROM transactions WHERE asset_id = ?"
+        )
+        .bind(asset.id)
+        .fetch_optional(pool)
+        .await?;
+        let earliest_date = earliest.map(|(d,)| d);
+
+        let end_ts = Utc::now().timestamp();
+        let url = format!(
+            "https://query1.finance.yahoo.com/v8/finance/chart/{}?period1=0&period2={}&interval=1d&events=splits",
+            asset.symbol, end_ts
+        );
+
+        let response = match self.fetch_with_retry(&url).await {
+            Ok(resp) => resp,
+            Err(e) => {
+                eprintln!("WARN: Failed to fetch splits for {}: {}", asset.symbol, e);
+                return Ok(0);
+            }
+        };
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body_preview = response.text().await.unwrap_or_default();
+            eprintln!(
+                "WARN: Yahoo Finance returned status {} for splits of {}. Body: {}",
+                status,
+                asset.symbol,
+                &body_preview[..body_preview.len().min(500)]
+            );
+            return Ok(0);
+        }
+
+        let yahoo_resp: YahooChartResponse = match response.json().await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("WARN: Failed to parse splits response for {}: {}", asset.symbol, e);
+                return Ok(0);
+            }
+        };
+
+        let mut events: Vec<(NaiveDate, u32, u32)> = Vec::new();
+        if let Some(splits) = yahoo_resp
+            .chart
+            .result
+            .first()
+            .and_then(|r| r.events.as_ref())
+            .and_then(|e| e.splits.as_ref())
+        {
+            for split in splits.values() {
+                let date = DateTime::from_timestamp(split.date, 0)
+                    .map(|dt| dt.date_naive())
+                    .unwrap_or_default();
+                let numerator = split.numerator.round() as u32;
+                let denominator = split.denominator.round() as u32;
+                events.push((date, numerator, denominator));
+            }
+        }
+        events.sort_by_key(|(d, _, _)| *d);
+
+        let inserted = apply_split_events(asset.id, earliest_date, &events, pool).await?;
+
+        sqlx::query("INSERT OR REPLACE INTO split_sync (symbol, last_synced_at) VALUES (?, ?)")
+            .bind(&asset.symbol)
+            .bind(today)
+            .execute(pool)
+            .await?;
+
+        Ok(inserted)
+    }
+
     pub fn detect_currency(symbol: &str) -> String {
         let upper = symbol.to_uppercase();
         if upper.ends_with(".DE") || upper.ends_with(".F") || upper.ends_with(".FR") || upper.ends_with(".MC") {
@@ -594,6 +760,135 @@ mod tests {
         let svc = CurrencyService::new();
         let price = svc.get_price("TEST", None, &pool).await;
         assert_ne!(price, Decimal::from_str("99.0").unwrap());
+    }
+
+    async fn make_split_tx_table(pool: &SqlitePool) {
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS transactions (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                asset_id INTEGER NOT NULL,
+                type TEXT NOT NULL,
+                quantity TEXT NOT NULL,
+                price TEXT NOT NULL,
+                fee TEXT NOT NULL,
+                date TEXT NOT NULL
+            )"
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_apply_split_events_inserts_split_transactions() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        make_split_tx_table(&pool).await;
+
+        let events = vec![
+            (NaiveDate::from_ymd_opt(2020, 8, 31).unwrap(), 4u32, 1u32),
+            (NaiveDate::from_ymd_opt(2024, 6, 1).unwrap(), 4u32, 1u32),
+        ];
+        let earliest = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let inserted = apply_split_events(1, Some(earliest), &events, &pool).await.unwrap();
+
+        assert_eq!(inserted, 2);
+
+        let rows: Vec<(String, String, String, String)> = sqlx::query_as(
+            "SELECT type, quantity, price, fee FROM transactions WHERE asset_id = 1"
+        )
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+        assert_eq!(rows.len(), 2);
+        for (ty, qty, price, fee) in rows {
+            assert_eq!(ty, "SPLIT");
+            assert_eq!(qty, "4");
+            assert_eq!(price, "1");
+            assert_eq!(fee, "0");
+        }
+    }
+
+    #[tokio::test]
+    async fn test_apply_split_events_dedupes_manual_split_same_date() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        make_split_tx_table(&pool).await;
+
+        let _ = sqlx::query(
+            "INSERT INTO transactions (asset_id, type, quantity, price, fee, date) VALUES (1, 'SPLIT', '4', '1', '0', ?)"
+        )
+        .bind(DateTime::from_timestamp(1717200000, 0).unwrap())
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let events = vec![(NaiveDate::from_ymd_opt(2024, 6, 1).unwrap(), 4u32, 1u32)];
+        let inserted = apply_split_events(1, None, &events, &pool).await.unwrap();
+
+        assert_eq!(inserted, 0);
+    }
+
+    #[tokio::test]
+    async fn test_apply_split_events_skips_splits_before_first_transaction() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        make_split_tx_table(&pool).await;
+
+        let events = vec![
+            (NaiveDate::from_ymd_opt(2019, 1, 1).unwrap(), 2u32, 1u32),
+            (NaiveDate::from_ymd_opt(2024, 6, 1).unwrap(), 4u32, 1u32),
+        ];
+        let earliest = NaiveDate::from_ymd_opt(2020, 1, 1).unwrap();
+        let inserted = apply_split_events(1, Some(earliest), &events, &pool).await.unwrap();
+
+        assert_eq!(inserted, 1);
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM transactions WHERE asset_id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn test_parse_yahoo_splits_events() {
+        let json = r#"{
+            "chart": {
+                "result": [{
+                    "meta": {"symbol": "AAPL"},
+                    "timestamp": [],
+                    "indicators": {"quote": [{"close": []}]},
+                    "events": {
+                        "splits": {
+                            "1402320600": {"date": 1402320600, "numerator": 7.0, "denominator": 1.0, "splitRatio": "7:1"},
+                            "1598880600": {"date": 1598880600, "numerator": 4.0, "denominator": 1.0, "splitRatio": "4:1"}
+                        }
+                    }
+                }]
+            }
+        }"#;
+
+        let parsed: YahooChartResponse = serde_json::from_str(json).unwrap();
+        let splits = parsed.chart.result[0].events.as_ref().unwrap().splits.as_ref().unwrap();
+        assert_eq!(splits.len(), 2);
+        let seven = splits.get(&1402320600).unwrap();
+        assert_eq!(seven.numerator, 7.0);
+        assert_eq!(seven.denominator, 1.0);
+        let four = splits.get(&1598880600).unwrap();
+        assert_eq!(four.numerator, 4.0);
+    }
+
+    #[test]
+    fn test_parse_yahoo_response_without_events_still_works() {
+        let json = r#"{
+            "chart": {
+                "result": [{
+                    "meta": {"symbol": "AAPL"},
+                    "timestamp": [],
+                    "indicators": {"quote": [{"close": []}]}
+                }]
+            }
+        }"#;
+
+        let parsed: YahooChartResponse = serde_json::from_str(json).unwrap();
+        assert!(parsed.chart.result[0].events.is_none());
     }
 
     #[test]

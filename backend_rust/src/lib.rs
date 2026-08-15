@@ -118,6 +118,11 @@ pub async fn init_db(pool: &SqlitePool) -> Result<(), sqlx::Error> {
         .execute(pool)
         .await?;
 
+    sqlx::query("CREATE TABLE IF NOT EXISTS split_sync (
+        symbol TEXT PRIMARY KEY,
+        last_synced_at DATE NOT NULL
+    )").execute(pool).await?;
+
     migrate_decimal_columns(pool).await?;
 
     Ok(())
