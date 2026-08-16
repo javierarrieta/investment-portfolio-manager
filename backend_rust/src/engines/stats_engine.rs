@@ -194,7 +194,31 @@ impl StatsEngine {
 
         let mut asset_qtys: HashMap<String, Decimal> = HashMap::new();
         let mut sorted_txs = transactions.to_vec();
-        sorted_txs.sort_by_key(|tx| tx.date);
+        // Splits must apply to existing lots before any same-day buy/sell, matching
+        // the tax engine ordering.
+        let split_priority = |tx: &Transaction| {
+            if tx.r#type.to_uppercase() == "SPLIT" { 0 } else { 1 }
+        };
+        sorted_txs.sort_by(|a, b| {
+            a.date.cmp(&b.date).then_with(|| split_priority(a).cmp(&split_priority(b)))
+        });
+
+        // Yahoo returns split-ADJUSTED close prices (continuous across a split), so
+        // the pre-split value must use the post-split-equivalent quantity. For each
+        // symbol, collect split ratios (quantity : price) to scale pre-split days.
+        let mut split_ratios: HashMap<String, Vec<(NaiveDate, Decimal)>> = HashMap::new();
+        for tx in &sorted_txs {
+            if tx.r#type.to_uppercase() == "SPLIT" {
+                let symbol = assets.iter().find(|a| a.id == tx.asset_id).map(|a| a.symbol.as_str()).unwrap_or("");
+                let num = crate::db_types::str_to_decimal(&tx.quantity);
+                let den = crate::db_types::str_to_decimal(&tx.price);
+                if num > Decimal::ZERO && den > Decimal::ZERO && !symbol.is_empty() {
+                    split_ratios.entry(symbol.to_string())
+                        .or_default()
+                        .push((tx.date.date_naive(), num / den));
+                }
+            }
+        }
 
         let mut tx_idx = 0;
         for &date in &dates {
@@ -223,13 +247,26 @@ impl StatsEngine {
                 let qty = asset_qtys.get(&asset.symbol).cloned().unwrap_or(Decimal::ZERO);
                 let price = price_map.get(&(date, asset.symbol.clone())).cloned().unwrap_or(Decimal::ZERO);
 
+                // Pre-split days: scale the running quantity by the product of all
+                // future split ratios, because the historical price is already
+                // split-adjusted. Without this the pre-split value is too low and
+                // the series jumps at the split date.
+                let mut effective_qty = qty;
+                if let Some(ratios) = split_ratios.get(&asset.symbol) {
+                    for (split_date, ratio) in ratios {
+                        if *split_date > date {
+                            effective_qty *= ratio;
+                        }
+                    }
+                }
+
                 let mut final_price = price;
                 if asset.currency != base_currency {
                     let key = format!("{}->{}", asset.currency, base_currency);
                     let rate = rate_cache.get(&key).copied().unwrap_or(Decimal::ONE);
                     final_price *= rate;
                 }
-                daily_val += qty * final_price;
+                daily_val += effective_qty * final_price;
             }
 
             portfolio_values.push(daily_val);
@@ -409,13 +446,16 @@ mod tests {
         let start_date = buy_date - chrono::Duration::days(365);
 
         let symbol = "SPLITSTTEST";
+        // Yahoo returns split-ADJUSTED close prices: the series is continuous
+        // across a split (no price step). Real feed: constant 50.0 here, which
+        // for the pre-split period represents the raw price divided by the ratio.
+        let sjson = "50.0";
         let mut curr = start_date;
         while curr <= today {
-            let price = if curr < split_date { "100.0" } else { "50.0" };
             sqlx::query("INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)")
                 .bind(symbol)
                 .bind(curr)
-                .bind(price)
+                .bind(sjson)
                 .execute(&pool)
                 .await
                 .unwrap();
@@ -473,14 +513,120 @@ mod tests {
         ).await.unwrap();
 
         // 100 shares bought pre-split, 2:1 split -> 200, sell 50 -> 150 remaining.
-        // Final price (post-split) is 50, so value = 150 * 50 = 7500. Without split
-        // handling the sell would apply to 100 shares leaving 50 -> value 2500.
+        // Price is split-ADJUSTED (constant 50.0), so pre-split each week must
+        // value the position as 200 shares (post-split equivalent) x 50 = 10000,
+        // NOT 100 x 50 = 5000. Otherwise the historical series has a fake step
+        // at the split date and a fabricated daily return / TWR spike.
+        let history = result.get("history").unwrap().as_array().unwrap();
+        for entry in history {
+            let date_str = entry.get("date").and_then(|d| d.as_str()).unwrap_or("");
+            let value_str = entry.get("value").and_then(|v| v.as_str()).unwrap_or("");
+            let week_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d").unwrap();
+            if week_date < split_date && week_date >= buy_date {
+                let week_value = Decimal::from_str(value_str).unwrap();
+                assert_eq!(
+                    week_value,
+                    Decimal::from_str("10000").unwrap(),
+                    "pre-split history not split-scaled on {date_str}: got {week_value}"
+                );
+            }
+        }
+
         let metrics = result.get("metrics").unwrap();
         let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
         assert_eq!(
             Decimal::from_str(value).unwrap(),
             Decimal::from_str("7500").unwrap(),
             "expected 150 shares at 50, got value {value}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_split_on_same_day_as_buy_splits_first() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        sqlx::query("CREATE TABLE IF NOT EXISTS historical_prices (symbol TEXT, date DATE, close_price TEXT)")
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let today = Utc::now().date_naive();
+        let day = today - chrono::Duration::days(30);
+        let earlier = day - chrono::Duration::days(10);
+        let start_date = earlier - chrono::Duration::days(1);
+
+        let symbol = "SAMESPLIT";
+        // Split-adjusted close: constant 1.0.
+        let mut curr = start_date;
+        while curr <= today {
+            sqlx::query("INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)")
+                .bind(symbol)
+                .bind(curr)
+                .bind("1.0")
+                .execute(&pool)
+                .await
+                .unwrap();
+            match curr.succ_opt() {
+                Some(next) => curr = next,
+                None => break,
+            }
+        }
+
+        let asset = Asset {
+            id: 1,
+            portfolio_id: 1,
+            symbol: symbol.to_string(),
+            name: "Split Test".to_string(),
+            asset_type: "STOCK".to_string(),
+            sector: None,
+            currency: "USD".to_string(),
+            isin: None,
+        };
+        let initial_buy = Transaction {
+            id: 1,
+            asset_id: 1,
+            r#type: "BUY".to_string(),
+            quantity: "100.0".to_string(),
+            price: "1.0".to_string(),
+            fee: "0.0".to_string(),
+            date: earlier.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        };
+        let split = Transaction {
+            id: 2,
+            asset_id: 1,
+            r#type: "SPLIT".to_string(),
+            quantity: "2.0".to_string(),
+            price: "1.0".to_string(),
+            fee: "0.0".to_string(),
+            date: day.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        };
+        let same_day_buy = Transaction {
+            id: 3,
+            asset_id: 1,
+            r#type: "BUY".to_string(),
+            quantity: "100.0".to_string(),
+            price: "1.0".to_string(),
+            fee: "0.0".to_string(),
+            date: day.and_hms_opt(0, 0, 0).unwrap().and_utc(),
+        };
+
+        let svc = CurrencyService::new();
+        let result = StatsEngine::calculate_portfolio_performance(
+            &pool,
+            &[asset],
+            &[initial_buy, split, same_day_buy],
+            "USD",
+            &svc,
+        ).await.unwrap();
+
+        // Split must apply before the same-day buy: 100 -> 200 (split), then
+        // +100 buy = 300 shares. If the buy ran first, 100+100=200 then split
+        // would give 400 -> wrong.
+        let metrics = result.get("metrics").unwrap();
+        let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
+        assert_eq!(
+            Decimal::from_str(value).unwrap(),
+            Decimal::from_str("300").unwrap(),
+            "expected 300 post-split shares at adjusted price 1.0, got value {value}"
         );
     }
 
