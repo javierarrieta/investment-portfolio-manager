@@ -51,6 +51,12 @@ describe('validateCsvRow', () => {
     expect(result.errors.some((e) => e.field === 'price')).toBe(true);
   });
 
+  test('SPLIT with non-positive numerator (qty 0) rejected', () => {
+    const row = { date: '2024-01-15', symbol: 'AAPL', type: 'SPLIT', qty: '0', price: '1' };
+    const result = validateCsvRow(row, columnMapping, 1);
+    expect(result.errors.some((e) => e.field === 'quantity')).toBe(true);
+  });
+
   test('rejects invalid date format', () => {
     const row = { date: 'not-a-date', symbol: 'AAPL', type: 'BUY', qty: '100', price: '150.00' };
     const result = validateCsvRow(row, columnMapping, 1);

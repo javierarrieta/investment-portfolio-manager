@@ -108,10 +108,22 @@ export const handlers = [
       date: body.date
     }, { status: 201 })
   }),
-  http.delete('/api/portfolios/:id', () => {
-    return HttpResponse.json(null, { status: 204 })
-  }),
-  http.all('*', () => {
-    return HttpResponse.json({ error: 'not implemented' }, { status: 501 })
-  })
-]
+   http.delete('/api/portfolios/:id', () => {
+     return HttpResponse.json(null, { status: 204 })
+   }),
+   http.get('/api/portfolios/:id/performance', () => {
+     return HttpResponse.json({ metrics: { portfolio_value: 5000 } })
+   }),
+   http.get('/api/portfolios/:id/tax-summary', () => {
+     return HttpResponse.json({ currency: 'USD', total_portfolio_value: 5000, total_realized_pnl: 0, total_unrealized_pnl: 0, assets: [] })
+   }),
+   http.get('/api/portfolios/:id/transactions', () => {
+     return HttpResponse.json([
+       { id: 1, asset_id: 1, type: 'BUY', quantity: 100, price: 50, fee: 0, date: '2024-01-15T00:00:00Z' },
+       { id: 2, asset_id: 1, type: 'SPLIT', quantity: 2, price: 1, fee: 0, date: '2024-06-01T00:00:00Z' },
+     ])
+   }),
+   http.all('*', () => {
+     return HttpResponse.json({ error: 'not implemented' }, { status: 501 })
+   })
+ ]

@@ -891,6 +891,50 @@ mod tests {
         assert!(parsed.chart.result[0].events.is_none());
     }
 
+    #[tokio::test]
+    async fn test_sync_splits_skips_fetch_within_throttle_window() {
+        let pool = SqlitePool::connect(":memory:").await.unwrap();
+        make_split_tx_table(&pool).await;
+        sqlx::query(
+            "CREATE TABLE IF NOT EXISTS split_sync (symbol TEXT PRIMARY KEY, last_synced_at DATE NOT NULL)"
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        // A recent sync record must short-circuit before any network call, so the
+        // symbol here can be bogus — the function should not try to resolve it.
+        let today = Utc::now().date_naive();
+        sqlx::query("INSERT OR REPLACE INTO split_sync (symbol, last_synced_at) VALUES (?, ?)")
+            .bind("THROTTLETEST")
+            .bind(today)
+            .execute(&pool)
+            .await
+            .unwrap();
+
+        let asset = Asset {
+            id: 1,
+            portfolio_id: 1,
+            symbol: "THROTTLETEST".to_string(),
+            name: "Throttle".to_string(),
+            asset_type: "STOCK".to_string(),
+            sector: None,
+            currency: "USD".to_string(),
+            isin: None,
+        };
+
+        let svc = CurrencyService::new();
+        let inserted = svc.sync_splits_for_asset(&asset, &pool).await.unwrap();
+        assert_eq!(inserted, 0);
+
+        // No split transaction was created for the asset.
+        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM transactions WHERE asset_id = 1")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+        assert_eq!(count, 0);
+    }
+
     #[test]
     fn test_detect_currency_german_stock() {
         assert_eq!(CurrencyService::detect_currency("SAP.DE"), "EUR");
