@@ -7,7 +7,7 @@
  * use either string or number for decimal fields.
  */
 export type AssetType = 'STOCK' | 'CRYPTO' | 'ETF' | 'MUTUAL_FUND';
-export type TransactionType = 'BUY' | 'SELL';
+export type TransactionType = 'BUY' | 'SELL' | 'SPLIT';
 
 export interface Transaction {
   id: number;

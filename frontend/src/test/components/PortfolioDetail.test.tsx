@@ -132,7 +132,7 @@ describe('PortfolioDetail', () => {
 
     await user.click(screen.getByText('Log Transaction'))
 
-    expect(screen.getByText('Log Buy/Sell Transaction')).toBeVisible()
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
   })
 
   it('opens asset modal when "Add Asset Symbol" is clicked', async () => {
@@ -251,7 +251,7 @@ describe('PortfolioDetail', () => {
     )
 
     await user.click(screen.getByText('Log Transaction'))
-    expect(screen.getByText('Log Buy/Sell Transaction')).toBeVisible()
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
 
     const buyOption = screen.getByText('BUY')
     const typeSelect = buyOption.closest('select') as HTMLSelectElement
@@ -260,6 +260,35 @@ describe('PortfolioDetail', () => {
 
     await user.selectOptions(typeSelect, 'SELL')
     expect(typeSelect.value).toBe('SELL')
+  })
+
+  it('allows selecting SPLIT in transaction modal and hides fee', async () => {
+    const user = userEvent.setup()
+    render(
+      <PortfolioDetail
+        portfolio={mockPortfolio}
+        taxSummary={mockTaxSummary}
+        onAddAsset={noop}
+        onDeleteAsset={noop}
+        onDeletePortfolio={noop}
+        onAddTransaction={noop}
+        strategy="FIFO"
+        setStrategy={() => {}}
+        thresholdDays={30}
+        setThresholdDays={() => {}}
+      />
+    )
+
+    await user.click(screen.getByText('Log Transaction'))
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
+
+    const buyOption = screen.getByText('BUY')
+    const typeSelect = buyOption.closest('select') as HTMLSelectElement
+    await user.selectOptions(typeSelect, 'SPLIT')
+    expect(typeSelect.value).toBe('SPLIT')
+
+    expect(screen.getByText(/Shares after : Shares before/i)).toBeVisible()
+    expect(screen.queryByText(/Transaction Fee/i)).not.toBeInTheDocument()
   })
 
   it('calls onAddTransaction when transaction form is submitted', async () => {
@@ -283,7 +312,7 @@ describe('PortfolioDetail', () => {
 
     // Open the transaction modal
     await user.click(screen.getAllByText('Log Transaction')[0])
-    expect(screen.getByText('Log Buy/Sell Transaction')).toBeVisible()
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
 
     // Select asset
     const aaplOption = screen.getByText('AAPL (Apple Inc.)')
@@ -320,6 +349,112 @@ describe('PortfolioDetail', () => {
       quantity: '10',
       price: '180',
     }))
+  })
+
+  it('calls onAddTransaction with fee "0" when a valid SPLIT is submitted', async () => {
+    const user = userEvent.setup()
+    const onAddTransaction = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <PortfolioDetail
+        portfolio={mockPortfolio}
+        taxSummary={mockTaxSummary}
+        onAddAsset={noop}
+        onDeleteAsset={noop}
+        onDeletePortfolio={noop}
+        onAddTransaction={onAddTransaction}
+        strategy="FIFO"
+        setStrategy={() => {}}
+        thresholdDays={30}
+        setThresholdDays={() => {}}
+      />
+    )
+
+    await user.click(screen.getAllByText('Log Transaction')[0])
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
+
+    const typeSelect = screen.getByText('BUY').closest('select') as HTMLSelectElement
+    await user.selectOptions(typeSelect, 'SPLIT')
+
+    const aaplOption = screen.getByText('AAPL (Apple Inc.)')
+    const assetSelect = aaplOption.closest('select') as HTMLSelectElement
+    await user.selectOptions(assetSelect, '1')
+
+    const form = document.querySelector('form')
+    const submitBtn = form!.querySelector('button[type="submit"]')
+
+    const spinbuttons = screen.getAllByRole('spinbutton') as HTMLInputElement[]
+    const quantityInput = spinbuttons[0]
+    const priceInput = spinbuttons[1]
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype, 'value'
+    )?.set
+    nativeInputValueSetter?.call(quantityInput, '2')
+    quantityInput.dispatchEvent(new Event('input', { bubbles: true }))
+    quantityInput.dispatchEvent(new Event('change', { bubbles: true }))
+    nativeInputValueSetter?.call(priceInput, '1')
+    priceInput.dispatchEvent(new Event('input', { bubbles: true }))
+    priceInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    await user.click(submitBtn!)
+
+    expect(onAddTransaction).toHaveBeenCalledWith(1, expect.objectContaining({
+      type: 'SPLIT',
+      quantity: '2',
+      price: '1',
+      fee: '0',
+    }))
+  })
+
+  it('shows an error and does not submit when a SPLIT has a non-positive ratio', async () => {
+    const user = userEvent.setup()
+    const onAddTransaction = vi.fn().mockResolvedValue(undefined)
+
+    render(
+      <PortfolioDetail
+        portfolio={mockPortfolio}
+        taxSummary={mockTaxSummary}
+        onAddAsset={noop}
+        onDeleteAsset={noop}
+        onDeletePortfolio={noop}
+        onAddTransaction={onAddTransaction}
+        strategy="FIFO"
+        setStrategy={() => {}}
+        thresholdDays={30}
+        setThresholdDays={() => {}}
+      />
+    )
+
+    await user.click(screen.getAllByText('Log Transaction')[0])
+    expect(screen.getByText('Log Buy/Sell/Split Transaction')).toBeVisible()
+
+    const typeSelect = screen.getByText('BUY').closest('select') as HTMLSelectElement
+    await user.selectOptions(typeSelect, 'SPLIT')
+
+    const aaplOption = screen.getByText('AAPL (Apple Inc.)')
+    const assetSelect = aaplOption.closest('select') as HTMLSelectElement
+    await user.selectOptions(assetSelect, '1')
+
+    const form = document.querySelector('form')
+    const submitBtn = form!.querySelector('button[type="submit"]')
+
+    const spinbuttons = screen.getAllByRole('spinbutton') as HTMLInputElement[]
+    const quantityInput = spinbuttons[0]
+    const priceInput = spinbuttons[1]
+    const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+      window.HTMLInputElement.prototype, 'value'
+    )?.set
+    nativeInputValueSetter?.call(quantityInput, '0')
+    quantityInput.dispatchEvent(new Event('input', { bubbles: true }))
+    quantityInput.dispatchEvent(new Event('change', { bubbles: true }))
+    nativeInputValueSetter?.call(priceInput, '1')
+    priceInput.dispatchEvent(new Event('input', { bubbles: true }))
+    priceInput.dispatchEvent(new Event('change', { bubbles: true }))
+
+    await user.click(submitBtn!)
+
+    expect(onAddTransaction).not.toHaveBeenCalled()
+    expect(screen.getByText(/Split ratio must be positive/i)).toBeInTheDocument()
   })
 
   it('does not show Delete Portfolio button when portfolio has assets', () => {

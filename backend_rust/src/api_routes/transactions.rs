@@ -4,6 +4,7 @@ use crate::models::{Asset, Transaction};
 use crate::schemas::{AssetCreate, AssetOut, AssetUpdate, TransactionCreate, TransactionOut};
 use crate::api_routes::lookup::is_valid_isin;
 use crate::services::currency_service::CurrencyService;
+use rust_decimal::Decimal;
 
 #[utoipa::path(
     post,
@@ -181,6 +182,14 @@ pub async fn create_transaction(
         return Err(Status::NotFound);
     }
 
+    let tx_type = tx.r#type.to_uppercase();
+    if tx_type == "SPLIT" {
+        if tx.quantity <= Decimal::ZERO || tx.price <= Decimal::ZERO {
+            return Err(Status::BadRequest);
+        }
+    }
+    let tx_fee = if tx_type == "SPLIT" { Decimal::ZERO } else { tx.fee };
+
     // Validate date is within reasonable range
     let tx_date = tx.date.date_naive();
     let min_date = chrono::NaiveDate::from_ymd_opt(1900, 1, 1).ok_or(Status::BadRequest)?;
@@ -194,10 +203,10 @@ pub async fn create_transaction(
          VALUES (?, ?, ?, ?, ?, ?) RETURNING *"
     )
     .bind(asset_id)
-    .bind(tx.r#type.to_uppercase())
+    .bind(&tx_type)
     .bind(tx.quantity.to_string())
     .bind(tx.price.to_string())
-    .bind(tx.fee.to_string())
+    .bind(tx_fee.to_string())
     .bind(tx.date)
     .fetch_one(pool.inner())
     .await

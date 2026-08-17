@@ -96,8 +96,8 @@ function validateType(
   }
 
   const upper = typeStr.trim().toUpperCase();
-  if (upper !== 'BUY' && upper !== 'SELL') {
-    errors.push({ row, field: 'type', message: `Invalid type "${typeStr}", must be BUY or SELL` });
+  if (upper !== 'BUY' && upper !== 'SELL' && upper !== 'SPLIT') {
+    errors.push({ row, field: 'type', message: `Invalid type "${typeStr}", must be BUY, SELL or SPLIT` });
   }
 
   return errors;
@@ -183,7 +183,7 @@ export interface ValidatedRow {
   row: number;
   date: string;
   symbol: string;
-  type: 'BUY' | 'SELL';
+  type: 'BUY' | 'SELL' | 'SPLIT';
   quantity: number;
   price: number;
   fee: number;
@@ -233,7 +233,11 @@ export function validateCsvRow(
   allErrors.push(...validateFee(feeRaw, rowNum));
 
   const upperType = typeRaw.trim().toUpperCase();
-  const normalizedType: 'BUY' | 'SELL' = (upperType === 'SELL' ? 'SELL' : 'BUY');
+  const normalizedType: 'BUY' | 'SELL' | 'SPLIT' = (upperType === 'SELL' ? 'SELL' : upperType === 'SPLIT' ? 'SPLIT' : 'BUY');
+
+  if (normalizedType === 'SPLIT' && !(parseNumeric(priceRaw) > 0)) {
+    allErrors.push({ row: rowNum, field: 'price', message: 'SPLIT ratio denominator (shares before) must be positive' });
+  }
 
   return {
     row: rowNum,
@@ -242,7 +246,7 @@ export function validateCsvRow(
     type: normalizedType,
     quantity: parseNumeric(qtyRaw) || 0,
     price: parseNumeric(priceRaw) || 0,
-    fee: parseNumeric(feeRaw ?? '0') || 0,
+    fee: normalizedType === 'SPLIT' ? 0 : (parseNumeric(feeRaw ?? '0') || 0),
     errors: allErrors,
   };
 }

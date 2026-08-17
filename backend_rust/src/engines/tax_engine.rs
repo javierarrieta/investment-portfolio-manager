@@ -143,6 +143,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_forward_split_adjusts_qty_and_cost_basis() {
+        let txs = vec![
+            make_tx(1, "BUY", "100.0", "100.0", "0.0", "2024-01-01T00:00:00Z"),
+            make_tx(2, "SPLIT", "2.0", "1.0", "0.0", "2024-06-01T00:00:00Z"),
+            make_tx(3, "SELL", "100.0", "60.0", "0.0", "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.current_shares, Decimal::from_str("100.0").unwrap());
+        assert_eq!(result.average_cost, Decimal::from_str("50.0").unwrap());
+        assert_eq!(result.realized_pnl, Decimal::from_str("1000.0").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_reverse_split_adjusts_qty_and_cost_basis() {
+        let txs = vec![
+            make_tx(1, "BUY", "100.0", "10.0", "0.0", "2024-01-01T00:00:00Z"),
+            make_tx(2, "SPLIT", "1.0", "10.0", "0.0", "2024-06-01T00:00:00Z"),
+            make_tx(3, "SELL", "5.0", "120.0", "0.0", "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.current_shares, Decimal::from_str("5.0").unwrap());
+        assert_eq!(result.average_cost, Decimal::from_str("100.0").unwrap());
+        assert_eq!(result.realized_pnl, Decimal::from_str("100.0").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_split_on_same_day_as_sell_applies_first() {
+        let txs = vec![
+            make_tx(1, "BUY", "100.0", "100.0", "0.0", "2024-01-01T00:00:00Z"),
+            make_tx(2, "SPLIT", "2.0", "1.0", "0.0", "2024-12-01T00:00:00Z"),
+            make_tx(3, "SELL", "100.0", "60.0", "0.0", "2024-12-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.current_shares, Decimal::from_str("100.0").unwrap());
+        assert_eq!(result.realized_pnl, Decimal::from_str("1000.0").unwrap());
+    }
+
+    #[tokio::test]
+    async fn test_split_with_no_prior_lots_is_noop() {
+        let txs = vec![
+            make_tx(1, "SPLIT", "2.0", "1.0", "0.0", "2024-01-01T00:00:00Z"),
+            make_tx(2, "BUY", "100.0", "100.0", "0.0", "2024-06-01T00:00:00Z"),
+        ];
+        let result = run_engine(&txs, "FIFO", 30).await;
+        assert_eq!(result.current_shares, Decimal::from_str("100.0").unwrap());
+        assert_eq!(result.average_cost, Decimal::from_str("100.0").unwrap());
+        assert_eq!(result.realized_pnl, Decimal::ZERO);
+    }
+
+    #[tokio::test]
     async fn test_multi_currency_conversion() {
         let txs = vec![
             make_tx(1, "BUY", "100.0", "100.0", "0.0", "2024-01-01T00:00:00Z"),
@@ -176,7 +226,13 @@ impl TaxLotEngine {
         hybrid_threshold_days: i64,
     ) -> Result<AssetTaxSummary> {
         let mut sorted_txs = transactions.to_vec();
-        sorted_txs.sort_by_key(|tx| tx.date);
+        // Splits must apply to existing lots before any same-day buy/sell.
+        let split_priority = |tx: &Transaction| {
+            if tx.r#type.to_uppercase() == "SPLIT" { 0 } else { 1 }
+        };
+        sorted_txs.sort_by(|a, b| {
+            a.date.cmp(&b.date).then_with(|| split_priority(a).cmp(&split_priority(b)))
+        });
 
         let current_price_base = if asset_currency != base_currency {
             let latest_date = sorted_txs.last().map(|tx| tx.date).unwrap_or_else(Utc::now);
@@ -271,6 +327,19 @@ impl TaxLotEngine {
                     realized_pnl += proceeds - cost_basis;
                     lot.qty -= matched_qty;
                     qty_to_sell -= matched_qty;
+                }
+            } else if tx.r#type.to_uppercase() == "SPLIT" {
+                // Split ratio = quantity : price (shares after : shares before).
+                // Existing lots scale in quantity and divide in unit cost so total
+                // cost basis is unchanged and no P&L is realized.
+                let denominator = tx_price;
+                if tx_qty > Decimal::ZERO && denominator > Decimal::ZERO {
+                    let ratio = tx_qty / denominator;
+                    for lot in buy_lots.iter_mut() {
+                        lot.qty *= ratio;
+                        lot.unit_cost /= ratio;
+                        lot.price /= ratio;
+                    }
                 }
             }
         }

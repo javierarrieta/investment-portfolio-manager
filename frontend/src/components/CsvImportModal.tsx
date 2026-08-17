@@ -311,7 +311,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
                              >
                                {availableFieldOptions.map((f) => (
                                  <option key={f} value={f}>
-                                   {f === 'type' ? 'Type (BUY/SELL)' : f.charAt(0).toUpperCase() + f.slice(1)}
+                                   {f === 'type' ? 'Type (BUY/SELL/SPLIT)' : f.charAt(0).toUpperCase() + f.slice(1)}
                                  </option>
                                ))}
                                <option value="">{field} (clear)</option>
@@ -352,7 +352,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
                      <option value="">Skip this column</option>
                      {availableFieldOptions.map((f) => (
                        <option key={f} value={f}>
-                         {f === 'type' ? 'Type (BUY/SELL)' : f.charAt(0).toUpperCase() + f.slice(1)}
+                         {f === 'type' ? 'Type (BUY/SELL/SPLIT)' : f.charAt(0).toUpperCase() + f.slice(1)}
                        </option>
                      ))}
                    </select>
@@ -384,6 +384,7 @@ export default function CsvImportModal({ portfolioId, assets, onClose, onImportC
                         <option value="">Skip</option>
                         <option value="BUY">BUY</option>
                         <option value="SELL">SELL</option>
+                        <option value="SPLIT">SPLIT</option>
                       </select>
                     ) : (
                       <input

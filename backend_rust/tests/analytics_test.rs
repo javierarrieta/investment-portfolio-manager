@@ -128,3 +128,76 @@ async fn test_performance_endpoint() {
     assert!(parsed.get("metrics").is_some());
     assert!(parsed.get("history").is_some());
 }
+
+#[tokio::test]
+async fn test_performance_value_reflects_split_transaction() {
+    use chrono::{NaiveDate, Utc};
+
+    let pool = setup_db().await;
+    let port_id = seed_portfolio(&pool, "Perf Split", "USD").await;
+    let asset_id = seed_asset(&pool, port_id, "SPLITINTTEST", "Split Int").await;
+
+    let symbol = "SPLITINTTEST";
+    let today = Utc::now().date_naive();
+    let split_date = NaiveDate::from_ymd_opt(2024, 6, 1).unwrap();
+    let buy_date = NaiveDate::from_ymd_opt(2024, 1, 10).unwrap();
+    let start_date = buy_date - chrono::Duration::days(365);
+
+    sqlx::query_as::<_, (i32,)>(
+        "INSERT INTO transactions (asset_id, type, quantity, price, fee, date) VALUES (?, 'BUY', ?, ?, '0', ?) RETURNING id"
+    )
+    .bind(asset_id)
+    .bind("100.0")
+    .bind("100.0")
+    .bind(buy_date.and_hms_opt(0, 0, 0).unwrap().and_utc())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    sqlx::query_as::<_, (i32,)>(
+        "INSERT INTO transactions (asset_id, type, quantity, price, fee, date) VALUES (?, 'SPLIT', ?, ?, '0', ?) RETURNING id"
+    )
+    .bind(asset_id)
+    .bind("2.0")
+    .bind("1.0")
+    .bind(split_date.and_hms_opt(0, 0, 0).unwrap().and_utc())
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+
+    // Seed split-adjusted (continuous) prices so the engine uses them instead of a
+    // live Yahoo fetch, and throttle split sync for this symbol so no network is hit.
+    let mut curr = start_date;
+    while curr <= today {
+        sqlx::query("INSERT OR REPLACE INTO historical_prices (symbol, date, close_price) VALUES (?, ?, ?)")
+            .bind(symbol)
+            .bind(curr)
+            .bind("50.0")
+            .execute(&pool)
+            .await
+            .unwrap();
+        match curr.succ_opt() {
+            Some(next) => curr = next,
+            None => break,
+        }
+    }
+    sqlx::query("INSERT OR REPLACE INTO split_sync (symbol, last_synced_at) VALUES (?, ?)")
+        .bind(symbol)
+        .bind(today)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    let rocket = build_rocket(pool);
+    let client = Client::tracked(rocket).await.unwrap();
+
+    let resp = client.get(format!("/api/portfolios/{}/performance", port_id)).dispatch().await;
+    assert_eq!(resp.status(), Status::Ok);
+    let body_str = resp.into_string().await.unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&body_str).unwrap();
+    let metrics = &parsed["metrics"];
+    let value = metrics.get("portfolio_value").unwrap().as_str().unwrap();
+    // 100 shares before a 2:1 split become 200; the final value at the split-adjusted
+    // price of 50.0 is 200 * 50 = 10000, not 100 * 50 = 5000.
+    assert_eq!(value.parse::<f64>().unwrap(), 10000.0);
+}
